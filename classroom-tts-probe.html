@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classroom TTS — transport probe</title>
+<style>
+  :root{
+    --bg:#E8EDF0;
+    --surface:#FFFFFF;
+    --ink:#101A21;
+    --muted:#63747F;
+    --rule:#C9D5DC;
+    --pass:#0B6E4F;
+    --fail:#A32B32;
+    --wait:#B07D18;
+    --accent:#1F4E96;
+    --mono: Consolas, "Cascadia Mono", ui-monospace, "SF Mono", monospace;
+    --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:16px;
+    line-height:1.5;
+    padding:32px 20px 80px;
+  }
+  .wrap{max-width:860px;margin:0 auto}
+
+  header{border-bottom:2px solid var(--ink);padding-bottom:16px;margin-bottom:28px}
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin:0 0 6px;
+  }
+  h1{
+    font-size:30px;
+    font-weight:650;
+    letter-spacing:-.02em;
+    margin:0 0 6px;
+  }
+  .sub{margin:0;color:var(--muted);max-width:60ch}
+
+  .bar{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+  button{
+    font-family:var(--sans);
+    font-size:14px;
+    font-weight:600;
+    padding:9px 16px;
+    border:1.5px solid var(--ink);
+    background:var(--ink);
+    color:#fff;
+    border-radius:2px;
+    cursor:pointer;
+  }
+  button.ghost{background:transparent;color:var(--ink)}
+  button:hover{opacity:.85}
+  button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+  button[disabled]{opacity:.4;cursor:default}
+
+  h2{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.18em;
+    text-transform:uppercase;
+    color:var(--muted);
+    font-weight:600;
+    margin:34px 0 10px;
+    padding-bottom:6px;
+    border-bottom:1px solid var(--rule);
+  }
+
+  .lane{
+    background:var(--surface);
+    border:1px solid var(--rule);
+    border-left:4px solid var(--rule);
+    padding:12px 14px;
+    margin-bottom:6px;
+    display:grid;
+    grid-template-columns:1fr auto;
+    gap:4px 16px;
+    align-items:baseline;
+  }
+  .lane[data-state="pass"]{border-left-color:var(--pass)}
+  .lane[data-state="fail"]{border-left-color:var(--fail)}
+  .lane[data-state="run"]{border-left-color:var(--wait)}
+
+  .lane .name{font-weight:600;font-size:15px}
+  .lane .target{
+    grid-column:1;
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--muted);
+    word-break:break-all;
+  }
+  .lane .verdict{
+    grid-column:2;
+    grid-row:1 / span 2;
+    align-self:center;
+    text-align:right;
+    font-family:var(--mono);
+    font-size:13px;
+    white-space:nowrap;
+  }
+  .verdict .ms{display:block;font-size:22px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .verdict .tag{display:block;font-size:10px;letter-spacing:.16em;text-transform:uppercase}
+  .lane[data-state="pass"] .verdict{color:var(--pass)}
+  .lane[data-state="fail"] .verdict{color:var(--fail)}
+  .lane[data-state="run"] .verdict{color:var(--wait)}
+  .lane[data-state="idle"] .verdict{color:var(--muted)}
+  .lane .note{grid-column:1 / -1;font-size:13px;color:var(--muted);margin-top:4px}
+
+  .voice{
+    background:var(--surface);
+    border:1px solid var(--rule);
+    padding:10px 12px;
+    margin-bottom:6px;
+    display:flex;
+    gap:12px;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .voice .vname{font-weight:600;font-size:14px}
+  .voice .vmeta{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .voice button{font-size:12px;padding:6px 12px;background:transparent;color:var(--ink)}
+
+  .callout{
+    background:var(--surface);
+    border:1px solid var(--rule);
+    border-top:3px solid var(--accent);
+    padding:14px 16px;
+    margin-top:8px;
+    font-size:14px;
+  }
+  .callout strong{color:var(--accent)}
+
+  textarea{
+    width:100%;
+    height:180px;
+    font-family:var(--mono);
+    font-size:12px;
+    padding:10px;
+    border:1px solid var(--rule);
+    background:var(--surface);
+    color:var(--ink);
+    border-radius:2px;
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Room 12 · pre-flight</p>
+    <h1>Transport probe</h1>
+    <p class="sub">Run this on each classroom laptop while it's on the district wifi. It checks which relay routes survive the filter, and lists the speech voices installed on this machine.</p>
+    <div class="bar">
+      <button id="run">Run all checks</button>
+      <button id="copy" class="ghost">Copy results</button>
+    </div>
+  </header>
+
+  <h2>Realtime · WebSocket</h2>
+  <div id="ws-lanes"></div>
+
+  <h2>Fallback · plain HTTPS on 443</h2>
+  <div id="http-lanes"></div>
+
+  <h2>Speech voices on this laptop</h2>
+  <div id="voices"><p class="sub">Run the checks to load the voice list.</p></div>
+
+  <div class="callout" id="verdict" hidden></div>
+
+  <h2>Paste this back</h2>
+  <textarea id="out" readonly placeholder="Results will appear here after a run."></textarea>
+
+</div>
+
+<script>
+const WS_TESTS = [
+  { name:"Generic WSS on port 443",   url:"wss://echo.websocket.events",           proto:null,
+    note:"If this fails, no websocket relay of any kind will work here." },
+  { name:"Second opinion, port 443",  url:"wss://ws.postman-echo.com/raw",         proto:null,
+    note:"Confirms the first result isn't just one blocked domain." },
+  { name:"HiveMQ broker, port 8884",  url:"wss://broker.hivemq.com:8884/mqtt",     proto:"mqtt",
+    note:"Free public MQTT. Non-standard port, commonly blocked at schools." },
+  { name:"EMQX broker, port 8084",    url:"wss://broker.emqx.io:8084/mqtt",        proto:"mqtt",
+    note:"Same idea, different vendor and port." }
+];
+
+const HTTP_TESTS = [
+  { name:"GitHub raw file read",  url:"https://raw.githubusercontent.com/github/gitignore/main/Python.gitignore",
+    note:"The guaranteed fallback: receivers poll a JSON file in your repo." },
+  { name:"GitHub API",            url:"https://api.github.com/rate_limit",
+    note:"Needed if the teacher page writes commands back to the repo." },
+  { name:"Ably realtime vendor",  url:"https://rest.ably.io/time",
+    note:"A hosted pub/sub that runs entirely on 443. Free tier is plenty." }
+];
+
+const lanes = new Map();
+
+function makeLane(container, test){
+  const el = document.createElement("div");
+  el.className = "lane";
+  el.dataset.state = "idle";
+  el.innerHTML = `
+    <div class="name"></div>
+    <div class="target"></div>
+    <div class="verdict"><span class="ms">—</span><span class="tag">not run</span></div>
+    <div class="note"></div>`;
+  el.querySelector(".name").textContent = test.name;
+  el.querySelector(".target").textContent = test.url;
+  el.querySelector(".note").textContent = test.note;
+  container.appendChild(el);
+  lanes.set(test.url, el);
+  return el;
+}
+
+function setState(url, state, ms, tag){
+  const el = lanes.get(url);
+  el.dataset.state = state;
+  el.querySelector(".ms").textContent = ms == null ? "—" : ms;
+  el.querySelector(".tag").textContent = tag;
+}
+
+function tick(url, start){
+  const el = lanes.get(url);
+  const msEl = el.querySelector(".ms");
+  let live = true;
+  (function frame(){
+    if(!live) return;
+    msEl.textContent = Math.round(performance.now() - start);
+    requestAnimationFrame(frame);
+  })();
+  return () => { live = false; };
+}
+
+function probeWS(test, timeout = 9000){
+  return new Promise(resolve => {
+    const start = performance.now();
+    setState(test.url, "run", 0, "dialing");
+    const stop = tick(test.url, start);
+    let done = false;
+    let ws;
+
+    const finish = (ok, tag) => {
+      if(done) return;
+      done = true;
+      stop();
+      const ms = Math.round(performance.now() - start);
+      setState(test.url, ok ? "pass" : "fail", ms, tag);
+      try { ws && ws.close(); } catch(e){}
+      resolve({ name:test.name, url:test.url, ok, ms, tag });
+    };
+
+    const timer = setTimeout(() => finish(false, "timed out"), timeout);
+
+    try {
+      ws = test.proto ? new WebSocket(test.url, test.proto) : new WebSocket(test.url);
+    } catch(e){
+      clearTimeout(timer);
+      return finish(false, "rejected");
+    }
+    ws.onopen  = () => { clearTimeout(timer); finish(true, "connected"); };
+    ws.onerror = () => { clearTimeout(timer); finish(false, "blocked"); };
+    ws.onclose = () => { clearTimeout(timer); finish(false, "closed early"); };
+  });
+}
+
+async function probeHTTP(test, timeout = 9000){
+  const start = performance.now();
+  setState(test.url, "run", 0, "fetching");
+  const stop = tick(test.url, start);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  let ok = false, tag = "blocked";
+  try {
+    const r = await fetch(test.url, { signal: ctrl.signal, cache: "no-store" });
+    ok = r.ok;
+    tag = r.ok ? "HTTP " + r.status : "HTTP " + r.status;
+  } catch(e){
+    tag = e.name === "AbortError" ? "timed out" : "blocked";
+  }
+  clearTimeout(timer);
+  stop();
+  const ms = Math.round(performance.now() - start);
+  setState(test.url, ok ? "pass" : "fail", ms, tag);
+  return { name:test.name, url:test.url, ok, ms, tag };
+}
+
+function loadVoices(){
+  const box = document.getElementById("voices");
+  if(!("speechSynthesis" in window)){
+    box.innerHTML = '<div class="lane" data-state="fail"><div class="name">No speech synthesis in this browser</div><div class="note">This machine can\'t be a receiver. Try Chrome or Edge.</div></div>';
+    return [];
+  }
+  const voices = speechSynthesis.getVoices();
+  if(!voices.length){
+    box.innerHTML = '<p class="sub">Loading voices…</p>';
+    return [];
+  }
+  box.innerHTML = "";
+  voices.forEach(v => {
+    const el = document.createElement("div");
+    el.className = "voice";
+    el.innerHTML = `<div>
+        <div class="vname"></div>
+        <div class="vmeta"></div>
+      </div>
+      <button type="button">Hear it</button>`;
+    el.querySelector(".vname").textContent = v.name;
+    el.querySelector(".vmeta").textContent =
+      v.lang + (v.localService ? " · installed locally" : " · needs network") + (v.default ? " · default" : "");
+    el.querySelector("button").addEventListener("click", () => {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance("The cat sat on the mat. Sam had a bag.");
+      u.voice = v;
+      speechSynthesis.speak(u);
+    });
+    box.appendChild(el);
+  });
+  return voices;
+}
+
+if("speechSynthesis" in window){
+  speechSynthesis.onvoiceschanged = () => loadVoices();
+}
+
+const wsBox = document.getElementById("ws-lanes");
+const httpBox = document.getElementById("http-lanes");
+WS_TESTS.forEach(t => makeLane(wsBox, t));
+HTTP_TESTS.forEach(t => makeLane(httpBox, t));
+
+document.getElementById("run").addEventListener("click", async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.textContent = "Running…";
+
+  const wsResults = await Promise.all(WS_TESTS.map(t => probeWS(t)));
+  const httpResults = [];
+  for(const t of HTTP_TESTS){ httpResults.push(await probeHTTP(t)); }
+  const voices = loadVoices();
+
+  const anyWS = wsResults.some(r => r.ok);
+  const v = document.getElementById("verdict");
+  v.hidden = false;
+  if(anyWS){
+    v.innerHTML = "<strong>Websockets get through.</strong> We can build the instant-response version — you type, laptop 1 speaks with no perceptible delay.";
+  } else if(httpResults.some(r => r.ok)){
+    v.innerHTML = "<strong>Websockets are blocked, but HTTPS works.</strong> We'll poll a JSON file in your repo instead. Expect one to three seconds between pressing send and hearing audio.";
+  } else {
+    v.innerHTML = "<strong>Nothing got through.</strong> Worth re-running on a different laptop, or checking whether this browser is behind a proxy that needs sign-in.";
+  }
+
+  const lines = [];
+  lines.push("CLASSROOM TTS PROBE — " + new Date().toLocaleString());
+  lines.push("UA: " + navigator.userAgent);
+  lines.push("");
+  lines.push("WEBSOCKET");
+  wsResults.forEach(r => lines.push(`  [${r.ok ? "PASS" : "FAIL"}] ${r.ms}ms  ${r.tag.padEnd(12)} ${r.url}`));
+  lines.push("");
+  lines.push("HTTPS");
+  httpResults.forEach(r => lines.push(`  [${r.ok ? "PASS" : "FAIL"}] ${r.ms}ms  ${r.tag.padEnd(12)} ${r.url}`));
+  lines.push("");
+  lines.push("VOICES (" + voices.length + ")");
+  voices.forEach(x => lines.push(`  ${x.name} | ${x.lang} | ${x.localService ? "local" : "remote"}`));
+  document.getElementById("out").value = lines.join("\n");
+
+  btn.disabled = false;
+  btn.textContent = "Run all checks again";
+});
+
+document.getElementById("copy").addEventListener("click", async (e) => {
+  const ta = document.getElementById("out");
+  if(!ta.value) return;
+  try {
+    await navigator.clipboard.writeText(ta.value);
+    e.currentTarget.textContent = "Copied";
+    setTimeout(() => { e.currentTarget.textContent = "Copy results"; }, 1500);
+  } catch(err){
+    ta.select();
+  }
+});
+</script>
+</body>
+</html>
