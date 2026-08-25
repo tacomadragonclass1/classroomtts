@@ -70,6 +70,10 @@
   input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:var(--acc);border:none}
   input[type="range"]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--acc);border:none}
 
+  .ctl .hint{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:none;color:var(--faint);margin-left:4px}
+  .ctl.off label{color:var(--faint)}
+  .ctl.off select,.ctl.off input[type="range"]{opacity:.4;cursor:not-allowed}
+  .ctl.off output{opacity:.4}
   .actions{margin-left:auto;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
   button.btn{font-family:var(--sans);font-size:14px;font-weight:700;border-radius:8px;border:1px solid var(--line);
              background:var(--panel-2);color:var(--text);padding:10px 16px;cursor:pointer;transition:background .15s,border-color .15s,opacity .15s}
@@ -470,7 +474,7 @@ function renderTeacher() {
             <select id="voice"></select>
           </div>
           <div class="ctl" id="ctl-effect">
-            <label for="effect">Effect</label>
+            <label for="effect">Effect <span class="hint" id="effect-hint"></span></label>
             <select id="effect">
               <option value="none">None</option><option value="robot">Robot</option>
               <option value="ghost">Ghost</option><option value="demon">Demon</option>
@@ -483,7 +487,7 @@ function renderTeacher() {
             <div class="row"><input type="range" id="rate" min="0.5" max="1.6" step="0.05" value="0.9"><output id="rate-out">0.90</output></div>
           </div>
           <div class="ctl slider" id="ctl-pitch">
-            <label for="pitch">Pitch</label>
+            <label for="pitch">Pitch <span class="hint" id="pitch-hint"></span></label>
             <div class="row"><input type="range" id="pitch" min="0.5" max="2" step="0.05" value="1"><output id="pitch-out">1.00</output></div>
           </div>
           <div class="ctl" id="ctl-device">
@@ -535,6 +539,7 @@ function renderTeacher() {
   const els = {
     text:$("text"), target:$("target"), voice:$("voice"), effect:$("effect"), ctlEffect:$("ctl-effect"),
     rate:$("rate"), rateOut:$("rate-out"), pitch:$("pitch"), pitchOut:$("pitch-out"), ctlPitch:$("ctl-pitch"),
+    effectHint:$("effect-hint"), pitchHint:$("pitch-hint"),
     device:$("device"), ctlDevice:$("ctl-device"), send:$("send"), preview:$("preview"),
     stopall:$("stopall"), download:$("download"), console:$("console"), status:$("status"),
     progress:$("progress"), progressFill:$("progress-fill"), wave:$("wave"), wavehint:$("wavehint"),
@@ -821,12 +826,24 @@ function renderTeacher() {
     state.engine = engine;
     document.body.dataset.engine = engine;
     for (const b of document.querySelectorAll(".engine")) b.setAttribute("aria-pressed", String(b.dataset.engine === engine));
+
+    /* Controls stay visible on every tier and disable where they can't work,
+       so the reason is on screen instead of the control vanishing. */
     const buffered = engine !== "system";
-    els.ctlEffect.style.display = buffered ? "" : "none";
-    els.ctlPitch.style.display  = buffered ? "" : "none";
+    const why = "Edge speaks straight out of the speaker and never hands the page its audio, so there's nothing to process. Switch to Fast or Studio.";
+
+    els.ctlEffect.classList.toggle("off", !buffered);
+    els.ctlPitch.classList.toggle("off", !buffered);
+    els.effect.disabled = !buffered;
+    els.pitch.disabled  = !buffered;
+    els.ctlEffect.title = buffered ? "" : why;
+    els.ctlPitch.title  = buffered ? "" : why;
+    els.effectHint.textContent = buffered ? "" : "needs Fast or Studio";
+    els.pitchHint.textContent  = buffered ? "" : "needs Fast or Studio";
+
     els.ctlDevice.style.display = engine === "kokoro" ? "" : "none";
     els.wavewrap.style.display  = buffered ? "" : "none";
-    els.download.style.display  = buffered ? "" : "none";
+    els.download.disabled = !buffered || !state.blob;
     els.send.textContent = buffered ? "Synthesize & send" : "Send to screens";
     fillVoices(); drawWave(); save();
   }
@@ -872,19 +889,93 @@ function renderTeacher() {
     return buf;
   }
 
-  /* ---------- engine: piper ---------- */
+  /* ---------- engine: piper ----------
+     Piper pulls its runtime from jsDelivr and voice files from
+     huggingface.co/rhasspy/piper-voices. When a filter blocks either,
+     the underlying promise never settles and never rejects — so every
+     stage gets a watchdog and a reachability probe on failure. */
+
+  const withTimeout = (promise, ms, label, getIdle) => new Promise((resolve, reject) => {
+    let done = false;
+    const timer = setInterval(() => {
+      if (done) return clearInterval(timer);
+      const idle = getIdle ? getIdle() : Infinity;
+      if (idle >= ms) {
+        clearInterval(timer);
+        reject(new Error(`${label} stalled — no activity for ${Math.round(ms / 1000)}s.`));
+      }
+    }, 1000);
+    promise.then(v => { done = true; clearInterval(timer); resolve(v); },
+                 e => { done = true; clearInterval(timer); reject(e); });
+  });
+
+  async function probeReachability() {
+    const targets = [
+      ["jsDelivr (library CDN)", "https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.4/package.json"],
+      ["Hugging Face (voice files)", "https://huggingface.co/rhasspy/piper-voices/resolve/main/voices.json"],
+    ];
+    const out = [];
+    for (const [name, url] of targets) {
+      try {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 8000);
+        const r = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
+        clearTimeout(t);
+        out.push(`${name}: ${r.ok ? "reachable" : "HTTP " + r.status}`);
+      } catch { out.push(`${name}: BLOCKED`); }
+    }
+    return out;
+  }
+
   async function piperSegment(text, voiceId) {
-    setStatus("Loading Piper runtime…", "busy");
-    state.piperMod ??= await import("https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.4/+esm");
+    let lastTick = performance.now();
+    const idle = () => performance.now() - lastTick;
+
+    if (!state.piperMod) {
+      setStatus("Loading Piper runtime from jsDelivr…", "busy");
+      console.log("[piper] importing library…");
+      try {
+        state.piperMod = await withTimeout(
+          import("https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.4/+esm"),
+          45000, "Loading the Piper library", idle);
+      } catch (e) {
+        console.error("[piper] import failed", e);
+        const probe = await probeReachability();
+        throw new Error(`${e.message} — ${probe.join(" · ")}`);
+      }
+      console.log("[piper] library loaded", Object.keys(state.piperMod));
+    }
+
     if (state.piperKey !== voiceId) {
       // The library reuses one session and never reloads on voice change;
       // resetting its singleton forces a clean init for the new voice.
-      state.piperMod.TtsSession._instance = null;
+      if (state.piperMod.TtsSession) state.piperMod.TtsSession._instance = null;
+      else console.warn("[piper] TtsSession not exported — skipping session reset");
       state.piperKey = voiceId;
     }
-    const blob = await state.piperMod.predict({ text, voiceId }, p => {
-      if (p.total) setStatus(`Downloading ${p.url.split("/").pop()} — ${fmtMB(p.loaded)} / ${fmtMB(p.total)} MB`, "busy", p.loaded / p.total * 100);
-    });
+
+    setStatus(`Preparing voice ${voiceId}…`, "busy");
+    console.log("[piper] predict start", voiceId);
+    lastTick = performance.now();
+
+    let blob;
+    try {
+      blob = await withTimeout(
+        state.piperMod.predict({ text, voiceId }, p => {
+          lastTick = performance.now();
+          const file = p?.url ? p.url.split("/").pop() : voiceId;
+          if (p?.total) setStatus(`Downloading ${file} — ${fmtMB(p.loaded)} / ${fmtMB(p.total)} MB`, "busy", p.loaded / p.total * 100);
+          else setStatus(`Fetching ${file}…`, "busy");
+        }),
+        90000, `Piper (voice ${voiceId})`, idle);
+    } catch (e) {
+      console.error("[piper] predict failed", e);
+      const probe = await probeReachability();
+      throw new Error(`${e.message} — ${probe.join(" · ")}`);
+    }
+
+    console.log("[piper] predict done", blob?.size, "bytes");
+    if (!blob || !blob.size) throw new Error("Piper returned no audio for that voice.");
     return ctx().decodeAudioData(await blob.arrayBuffer());
   }
 
