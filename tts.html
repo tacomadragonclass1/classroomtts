@@ -1,141 +1,219 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Classroom TTS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#E8EDF0; --surface:#FFFFFF; --ink:#101A21; --muted:#63747F;
-    --rule:#C9D5DC; --live:#0B6E4F; --off:#A32B32; --accent:#1F4E96;
-    --mono: Consolas, "Cascadia Mono", ui-monospace, monospace;
-    --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --bg:#14171c; --panel:#1c2026; --panel-2:#22272e; --line:#2e343d;
+    --text:#e9ebee; --muted:#8b94a2; --faint:#5b6472;
+    --acc:#9db2cc; --acc-dim:#9db2cc33; --acc-ink:#10141a;
+    --live:#4ecdb4; --off:#e07a7a;
+    --radius:10px;
+    --mono:"JetBrains Mono", ui-monospace, Consolas, monospace;
+    --sans:"Archivo", "Segoe UI", system-ui, sans-serif;
   }
-  *{box-sizing:border-box}
-  html,body{margin:0;height:100%}
-  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.5}
-  .wrap{max-width:820px;margin:0 auto;padding:28px 20px 60px}
+  body[data-engine="system"]{ --acc:#9db2cc; --acc-dim:#9db2cc2e; }
+  body[data-engine="piper"] { --acc:#4ecdb4; --acc-dim:#4ecdb42e; }
+  body[data-engine="kokoro"]{ --acc:#f5a95c; --acc-dim:#f5a95c2e; }
 
-  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
-  h1{font-size:28px;font-weight:650;letter-spacing:-.02em;margin:0 0 4px}
-  .sub{margin:0;color:var(--muted);max-width:62ch}
-  header{border-bottom:2px solid var(--ink);padding-bottom:14px;margin-bottom:22px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{color-scheme:dark}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15.5px;line-height:1.55;min-height:100vh}
+  main{max-width:920px;margin:0 auto;padding:26px 20px 70px}
 
-  label{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:18px 0 6px}
-  textarea,select,input[type=text]{
-    width:100%;font-family:var(--sans);font-size:17px;padding:11px 12px;
-    border:1px solid var(--rule);background:var(--surface);color:var(--ink);border-radius:2px;
-  }
-  textarea{height:110px;resize:vertical}
-  input[type=range]{width:100%}
-  button{
-    font-family:var(--sans);font-size:15px;font-weight:600;padding:11px 20px;
-    border:1.5px solid var(--ink);background:var(--ink);color:#fff;border-radius:2px;cursor:pointer;
-  }
-  button.ghost{background:transparent;color:var(--ink)}
-  button.small{font-size:12px;padding:6px 11px}
-  button:hover{opacity:.86}
-  button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
-  button[disabled]{opacity:.35;cursor:default}
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
-  @media(max-width:560px){.grid2{grid-template-columns:1fr}}
+  header{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:6px 16px;margin-bottom:20px}
+  .wordmark{font-variation-settings:"wdth" 125,"wght" 900;font-size:24px;letter-spacing:.04em;text-transform:uppercase}
+  .wordmark .dot{color:var(--acc);transition:color .25s}
+  .tagline{font-family:var(--mono);font-size:12px;color:var(--muted)}
 
-  .status{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
-  .chip{
-    font-family:var(--mono);font-size:12px;padding:5px 10px;border:1px solid var(--rule);
-    background:var(--surface);border-left:4px solid var(--muted);
-  }
-  .chip[data-live="1"]{border-left-color:var(--live);color:var(--live)}
-  .chip[data-live="0"]{border-left-color:var(--off);color:var(--off)}
+  .presence{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .chip{font-family:var(--mono);font-size:11.5px;padding:5px 11px;border:1px solid var(--line);
+        border-radius:6px;color:var(--faint);display:flex;align-items:center;gap:7px}
+  .chip::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
+  .chip[data-live="1"]{color:var(--live);border-color:#4ecdb444}
+  .chip[data-live="1"]::before{background:var(--live)}
+  .chip[data-live="0"]{color:var(--off);border-color:#e07a7a44}
+  .chip[data-live="0"]::before{background:var(--off)}
 
-  .hist{margin-top:22px;border-top:1px solid var(--rule);padding-top:8px}
-  .hist .item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:7px 0;border-bottom:1px solid var(--rule)}
-  .hist .txt{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .engines{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+  .engine{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+          padding:14px 14px 12px;cursor:pointer;text-align:left;color:var(--text);
+          font-family:var(--sans);transition:border-color .18s,background .18s,transform .08s}
+  .engine:hover{border-color:var(--faint)}
+  .engine:active{transform:scale(.99)}
+  .engine[aria-pressed="true"]{border-color:var(--acc);background:linear-gradient(180deg,var(--acc-dim),transparent 70%) var(--panel)}
+  .engine .tier{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .engine[aria-pressed="true"] .tier{color:var(--acc)}
+  .engine .ename{font-variation-settings:"wdth" 116,"wght" 800;font-size:18px;margin:2px 0 4px}
+  .engine .emeta{font-family:var(--mono);font-size:11px;color:var(--faint);line-height:1.5}
 
-  .link-out{font-family:var(--mono);font-size:12px;background:var(--surface);border:1px solid var(--rule);padding:9px 10px;word-break:break-all;margin-bottom:4px}
+  .bench{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  textarea{display:block;width:100%;background:transparent;border:0;resize:vertical;min-height:120px;
+           padding:18px;color:var(--text);font-family:var(--sans);font-size:18px;line-height:1.6}
+  textarea:focus{outline:none}
+  textarea::placeholder{color:var(--faint)}
 
-  /* Receiver */
-  body.recv{background:#fff;display:flex;align-items:center;justify-content:center;text-align:center}
-  .arm{width:100%;height:100vh;border:0;background:var(--accent);color:#fff;font-size:6vw;font-weight:700;letter-spacing:-.02em;cursor:pointer}
-  .stage{display:none;width:100%;height:100vh;flex-direction:column;align-items:center;justify-content:center;padding:4vw;gap:3vh}
+  .controls{border-top:1px solid var(--line);padding:14px 16px;display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 18px}
+  .ctl{display:flex;flex-direction:column;gap:5px}
+  .ctl label{font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  select{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:7px;
+         padding:8px 10px;font-family:var(--sans);font-size:14px;max-width:250px}
+  select:focus-visible,.engine:focus-visible,button:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+  .slider .row{display:flex;align-items:center;gap:8px}
+  .slider output{font-family:var(--mono);font-size:12px;color:var(--acc);min-width:36px;text-align:right}
+  input[type="range"]{-webkit-appearance:none;appearance:none;width:100px;height:4px;border-radius:2px;background:var(--line);cursor:pointer}
+  input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:var(--acc);border:none}
+  input[type="range"]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--acc);border:none}
+
+  .actions{margin-left:auto;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+  button.btn{font-family:var(--sans);font-size:14px;font-weight:700;border-radius:8px;border:1px solid var(--line);
+             background:var(--panel-2);color:var(--text);padding:10px 16px;cursor:pointer;transition:background .15s,border-color .15s,opacity .15s}
+  button.btn:hover:not(:disabled){border-color:var(--faint)}
+  button.btn:disabled{opacity:.38;cursor:not-allowed}
+  button.btn.primary{background:var(--acc);border-color:var(--acc);color:var(--acc-ink);
+                     font-variation-settings:"wdth" 110,"wght" 800;letter-spacing:.03em;padding:10px 24px}
+  button.btn.primary:hover:not(:disabled){filter:brightness(1.08)}
+
+  .console{border-top:1px solid var(--line);background:#171a1f;padding:9px 16px;font-family:var(--mono);
+           font-size:12px;color:var(--muted);display:flex;align-items:center;gap:12px;min-height:38px}
+  .console .led{width:8px;height:8px;border-radius:50%;flex:none;background:var(--faint)}
+  .console.busy .led{background:var(--acc);animation:pulse 1s ease-in-out infinite}
+  .console.ready .led{background:var(--acc)}
+  .console.error .led{background:var(--off)}
+  .console.error{color:var(--off)}
+  @keyframes pulse{50%{opacity:.25}}
+  .console .msg{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .progress{flex:1;height:4px;border-radius:2px;background:var(--line);overflow:hidden;display:none}
+  .console.busy .progress.on{display:block}
+  .progress i{display:block;height:100%;width:0%;background:var(--acc);transition:width .2s}
+
+  .wavewrap{border-top:1px solid var(--line);position:relative}
+  canvas#wave{display:block;width:100%;height:80px}
+  .wavehint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+            font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);pointer-events:none}
+
+  .hist{margin-top:22px}
+  .hist h2{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+           color:var(--muted);font-weight:500;margin-bottom:8px}
+  .hitem{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:9px 12px;
+         background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-bottom:6px}
+  .hitem .txt{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hitem .meta{font-family:var(--mono);font-size:10.5px;color:var(--faint);white-space:nowrap}
+  .hitem button{font-size:12.5px;padding:6px 12px}
+
+  .notes{margin-top:28px;display:grid;gap:13px}
+  .note{border-left:2px solid var(--line);padding:2px 0 2px 14px;color:var(--muted);font-size:14px}
+  .note b{color:var(--text);font-weight:700}
+  .note code{font-family:var(--mono);font-size:12.5px;color:var(--acc);background:var(--panel);padding:1px 5px;border-radius:4px}
+  .note.sys{border-color:#9db2cc}.note.pip{border-color:#4ecdb4}.note.kok{border-color:#f5a95c}.note.fx{border-color:#b48ef0}
+  .link-out{font-family:var(--mono);font-size:12px;background:var(--panel);border:1px solid var(--line);
+            border-radius:7px;padding:10px 12px;word-break:break-all;margin-bottom:10px;color:var(--text)}
+  .setup-label{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:16px 0 6px;display:block}
+  input[type=text]{background:var(--panel-2);color:var(--text);border:1px solid var(--line);border-radius:7px;
+                   padding:10px 12px;font-family:var(--mono);font-size:15px;width:100%;max-width:320px}
+  footer{margin-top:32px;font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+
+  body.recv{display:flex;align-items:center;justify-content:center;text-align:center;overflow:hidden}
+  .arm{width:100vw;height:100vh;border:0;background:var(--panel);color:var(--text);
+       font-family:var(--sans);font-variation-settings:"wdth" 110,"wght" 800;
+       font-size:5.5vw;letter-spacing:-.01em;cursor:pointer}
+  .arm span{display:block;font-size:.28em;font-variation-settings:"wdth" 100,"wght" 400;color:var(--muted);margin-top:.6em;font-family:var(--mono)}
+  .stage{display:none;width:100vw;height:100vh;flex-direction:column;align-items:center;justify-content:center;padding:4vw;gap:4vh}
   .stage.on{display:flex}
-  .spoken{font-size:clamp(36px,8.5vw,150px);font-weight:650;letter-spacing:-.03em;line-height:1.08;max-width:95vw}
-  .idle{color:var(--muted);font-family:var(--mono);font-size:14px;letter-spacing:.16em;text-transform:uppercase}
-  .badge{position:fixed;top:12px;left:14px;font-family:var(--mono);font-size:12px;color:var(--muted)}
-  .badge b{color:var(--live)}
-  .badge.down b{color:var(--off)}
-  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  .spoken{font-size:clamp(34px,8vw,140px);font-variation-settings:"wdth" 112,"wght" 750;
+          letter-spacing:-.025em;line-height:1.1;max-width:94vw}
+  .rstat{font-family:var(--mono);font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+  .badge{position:fixed;top:14px;left:16px;font-family:var(--mono);font-size:12px;color:var(--faint);display:flex;align-items:center;gap:7px}
+  .badge::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--off)}
+  .badge[data-live="1"]::before{background:var(--live)}
+
+  @media(max-width:680px){.engines{grid-template-columns:1fr}.actions{margin-left:0;width:100%}.actions .primary{flex:1}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
-<body>
+<body data-engine="system">
 <div id="app"></div>
 
 <script src="mqtt.min.js"></script>
-<script>
-const P = new URLSearchParams(location.search);
-const ROOM = P.get("room") || "";
-const ROLE = P.get("mode") === "send" ? "send" : (P.get("id") ? "recv" : "setup");
-const MY_ID = P.get("id") || "";
+<script type="module">
+/* =============================================================
+   Classroom TTS — teacher console + classroom screens
+     ?room=CODE&mode=send   teacher console
+     ?room=CODE&id=screen1  classroom screen
+     (no params)            setup / link generator
+
+   Three tiers. Piper and Kokoro synthesize ON THE TEACHER LAPTOP
+   and ship finished audio to the screens; the screens never
+   download an engine. Instant ships text; the screen's own Edge
+   voice speaks it.
+   ============================================================= */
+
+const P       = new URLSearchParams(location.search);
+const ROOM    = P.get("room") || "";
+const MY_ID   = P.get("id") || "";
+const ROLE    = P.get("mode") === "send" ? "send" : (MY_ID ? "recv" : "setup");
+const SCREENS = ["screen1", "screen2"];
 const BROKERS = {
   hivemq: "wss://broker.hivemq.com:8884/mqtt",
-  emqx:   "wss://broker.emqx.io:8084/mqtt"
+  emqx:   "wss://broker.emqx.io:8084/mqtt",
 };
-const BROKER = BROKERS[P.get("broker")] || BROKERS.hivemq;
-const SCREENS = ["screen1","screen2"];
-const app = document.getElementById("app");
-const T = {
-  say:  r => `ctts/${r}/say`,
-  stop: r => `ctts/${r}/stop`,
-  pres: (r,id) => `ctts/${r}/presence/${id}`,
-  presAll: r => `ctts/${r}/presence/+`
+const BROKER  = BROKERS[P.get("broker")] || BROKERS.hivemq;
+const app     = document.getElementById("app");
+
+const TOPIC = {
+  say:     r => `ctts/${r}/say`,     // {target, display, segments:[{p}|{t,v,r,vol}]}
+  audio:   r => `ctts/${r}/audio`,   // {id, target, text, chunks}
+  chunk:   r => `ctts/${r}/chunk`,   // {id, i, d}
+  stop:    r => `ctts/${r}/stop`,
+  pres:    (r, id) => `ctts/${r}/presence/${id}`,
+  presAll: r => `ctts/${r}/presence/+`,
 };
+const CHUNK_LEN  = 40000;   // base64 chars per MQTT message
+const TARGET_SR  = 24000;   // every buffer-tier output is resampled here so pauses/chimes splice safely
 
-/* ---------------- shared ---------------- */
-function connect(opts){
-  return mqtt.connect(BROKER, Object.assign({
-    clientId: "ctts_" + Math.random().toString(16).slice(2,10),
-    clean: true,
-    reconnectPeriod: 2000,
-    connectTimeout: 8000
-  }, opts));
+function connect(opts = {}) {
+  return mqtt.connect(BROKER, {
+    clientId: "ctts_" + Math.random().toString(16).slice(2, 10),
+    clean: true, reconnectPeriod: 2000, connectTimeout: 8000, ...opts,
+  });
 }
+const esc = s => String(s).replace(/[<>&"]/g, c => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", '"':"&quot;" }[c]));
 
-function voiceList(){
-  const v = speechSynthesis.getVoices();
-  // Edge natural voices first, then local, then everything else
-  const score = x => (/Natural/.test(x.name) ? 0 : x.localService ? 1 : 2);
-  return v.filter(x => x.lang.startsWith("en") || x.lang.startsWith("es"))
-          .sort((a,b) => score(a) - score(b) || a.name.localeCompare(b.name));
-}
-
-/* ---------------- setup screen ---------------- */
-function renderSetup(){
-  const room = ROOM || (Math.random().toString(36).slice(2,6) + Math.random().toString(36).slice(2,6));
+/* ============================================================
+   SETUP
+   ============================================================ */
+function renderSetup() {
+  const seed = Math.random().toString(36).slice(2, 6) + Math.random().toString(36).slice(2, 6);
   const base = location.origin + location.pathname;
   app.innerHTML = `
-    <div class="wrap">
+    <main>
       <header>
-        <p class="eyebrow">Classroom TTS</p>
-        <h1>Room links</h1>
-        <p class="sub">Bookmark all three. Open the screen links on the classroom laptops in Microsoft Edge, and the teacher link on your laptop.</p>
+        <div class="wordmark">Classroom TTS<span class="dot">.</span></div>
+        <div class="tagline">room links</div>
       </header>
-      <label>Room code</label>
-      <input type="text" id="roomin" value="${room}">
-      <p class="sub" style="margin-top:6px;font-size:13px">Anyone with this code can send audio to your screens, so keep it random and don't post it anywhere.</p>
-      <div id="links"></div>
-      <div class="row" style="margin-top:20px">
-        <button id="go">Open teacher page</button>
-      </div>
-    </div>`;
-
+      <p style="color:var(--muted);max-width:64ch;margin-bottom:8px">
+        Bookmark all three. Open the screen links on the classroom laptops in
+        <b style="color:var(--text)">Microsoft Edge</b> — Chrome only exposes five robotic voices there.
+      </p>
+      <label class="setup-label" for="roomin">Room code</label>
+      <input type="text" id="roomin" value="${seed}">
+      <p style="color:var(--faint);font-size:13px;margin-top:8px;max-width:64ch">
+        Anyone who knows this code can send audio to your screens. Keep it random and off the repo description.
+      </p>
+      <div id="links" style="margin-top:20px"></div>
+      <button class="btn primary" id="go" style="margin-top:6px">Open teacher console</button>
+    </main>`;
   const draw = () => {
     const r = document.getElementById("roomin").value.trim();
     document.getElementById("links").innerHTML =
-      `<label>Teacher laptop</label><div class="link-out">${base}?room=${r}&mode=send</div>` +
-      SCREENS.map((s,i) =>
-        `<label>Classroom screen ${i+1}</label><div class="link-out">${base}?room=${r}&id=${s}</div>`
-      ).join("");
+      `<span class="setup-label">Teacher laptop</span><div class="link-out">${base}?room=${r}&amp;mode=send</div>` +
+      SCREENS.map((s, i) =>
+        `<span class="setup-label">Classroom screen ${i + 1}</span><div class="link-out">${base}?room=${r}&amp;id=${s}</div>`).join("");
   };
   draw();
   document.getElementById("roomin").addEventListener("input", draw);
@@ -144,211 +222,1065 @@ function renderSetup(){
   });
 }
 
-/* ---------------- teacher / sender ---------------- */
-function renderSender(){
+/* ============================================================
+   VOICE CATALOGS (English only)
+   ============================================================ */
+const KOKORO_VOICES = [
+  ["US female", [
+    ["af_heart","Heart ★ best overall"],["af_bella","Bella ★"],["af_nicole","Nicole (whispery)"],
+    ["af_sarah","Sarah"],["af_sky","Sky"],["af_nova","Nova"],["af_aoede","Aoede"],
+    ["af_kore","Kore"],["af_alloy","Alloy"],["af_jessica","Jessica"],["af_river","River"],
+  ]],
+  ["US male", [
+    ["am_michael","Michael ★"],["am_fenrir","Fenrir ★"],["am_puck","Puck"],["am_adam","Adam"],
+    ["am_echo","Echo"],["am_eric","Eric"],["am_liam","Liam"],["am_onyx","Onyx"],["am_santa","Santa"],
+  ]],
+  ["UK female", [
+    ["bf_emma","Emma ★"],["bf_isabella","Isabella"],["bf_alice","Alice"],["bf_lily","Lily"],
+  ]],
+  ["UK male", [
+    ["bm_george","George ★"],["bm_fable","Fable"],["bm_lewis","Lewis"],["bm_daniel","Daniel"],
+  ]],
+];
+const PIPER_VOICES = [
+  ["US English", [
+    ["en_US-hfc_female-medium","HFC Female (medium) ★"],["en_US-hfc_male-medium","HFC Male (medium) ★"],
+    ["en_US-libritts-high","LibriTTS (high)"],["en_US-libritts_r-medium","LibriTTS-R (medium)"],
+    ["en_US-ryan-high","Ryan (high)"],["en_US-ryan-medium","Ryan (medium)"],["en_US-ryan-low","Ryan (low)"],
+    ["en_US-lessac-high","Lessac (high)"],["en_US-lessac-medium","Lessac (medium)"],["en_US-lessac-low","Lessac (low)"],
+    ["en_US-ljspeech-high","LJSpeech (high)"],["en_US-ljspeech-medium","LJSpeech (medium)"],
+    ["en_US-amy-medium","Amy (medium)"],["en_US-amy-low","Amy (low)"],
+    ["en_US-joe-medium","Joe (medium)"],["en_US-kristin-medium","Kristin (medium)"],
+    ["en_US-kusal-medium","Kusal (medium)"],["en_US-arctic-medium","Arctic multi-speaker (medium)"],
+    ["en_US-l2arctic-medium","L2 Arctic accents (medium)"],["en_US-kathleen-low","Kathleen (low)"],
+    ["en_US-danny-low","Danny (low)"],
+  ]],
+  ["UK English", [
+    ["en_GB-cori-high","Cori (high)"],["en_GB-cori-medium","Cori (medium)"],
+    ["en_GB-alba-medium","Alba — Scottish (medium)"],["en_GB-jenny_dioco-medium","Jenny (medium)"],
+    ["en_GB-northern_english_male-medium","Northern English Male (medium)"],["en_GB-aru-medium","Aru (medium)"],
+    ["en_GB-semaine-medium","Semaine (medium)"],["en_GB-vctk-medium","VCTK multi-speaker (medium)"],
+    ["en_GB-alan-medium","Alan (medium)"],["en_GB-alan-low","Alan (low)"],
+    ["en_GB-southern_english_female-low","Southern English Female (low)"],
+  ]],
+];
+const KOKORO_MODEL = "onnx-community/Kokoro-82M-v1.0-ONNX";
+
+/* ============================================================
+   STAGE DIRECTION PARSER
+   Strict: anything bracket-shaped that doesn't parse blocks the
+   send with a named error, so mistakes fail on the teacher
+   laptop and are never spoken to the class.
+
+   Items: {type:"pause",seconds} {type:"tone",kind} 
+          {type:"text",text,style:{voice,pace,volume,effect,pitch}}
+   ============================================================ */
+const PACE_MULT = { slow:0.78, fast:1.22, whisper:0.9, emphasize:0.9 };
+const EFFECTS = ["robot","ghost","demon","chipmunk","telephone","echo","reverse"];
+const INSTANT_OK = { pace:["slow","fast"] };   // whisper/emphasize need the buffer
+
+function parseDirections(input, tier, resolveVoice) {
+  const items = [], errors = [], warnings = [];
+  const style = { voice:null, voiceLabel:null, pace:null, volume:1, effect:null, pitch:null };
+  const open  = { pace:null, voice:null, volume:null, effect:null, pitch:null };
+  let container = null;   // {kind:"repeat"|"spell", n, text}
+
+  const err = m => errors.push(m);
+
+  const pushText = raw => {
+    const t = raw.replace(/\s+/g, " ").trim();
+    if (!t) return;
+    if (container) { container.text += (container.text ? " " : "") + t; return; }
+    items.push({ type:"text", text:t, style:{ ...style } });
+  };
+
+  const closeContainer = () => {
+    const c = container; container = null;
+    const t = c.text.trim();
+    if (!t) return err(`[${c.kind.toUpperCase()}] is empty.`);
+    if (c.kind === "repeat") {
+      for (let i = 0; i < c.n; i++) {
+        if (i) items.push({ type:"pause", seconds:0.4 });
+        items.push({ type:"text", text:t, style:{ ...style } });
+      }
+    } else { // spell — letter NAMES, which every engine says cleanly
+      const chars = t.replace(/[^A-Za-z0-9]/g, "");
+      if (!chars) return err("[SPELL] needs letters or digits inside it.");
+      [...chars].forEach((ch, i) => {
+        if (i) items.push({ type:"pause", seconds:0.3 });
+        items.push({ type:"text", text: ch.toUpperCase() + ".", style:{ ...style } });
+      });
+    }
+  };
+
+  const NUM = /^\d*\.?\d+$/;          // parseFloat("1,5") silently gives 1 — reject anything non-numeric outright
+  const badNum = (tok, hint) => err(`${tok}: "${hint}" isn't a plain number — use a dot for decimals, like 1.5.`);
+
+  const tokenRe = /\[[^\][\n]*\]/g;
+  let last = 0;
+  for (const m of input.matchAll(tokenRe)) {
+    pushText(input.slice(last, m.index));
+    last = m.index + m[0].length;
+
+    const body = m[0].slice(1, -1).trim();
+    const closing = body.startsWith("/");
+    const parts = (closing ? body.slice(1) : body).trim().split(/\s+/);
+    const kw = (parts[0] || "").toUpperCase();
+    const arg = parts.slice(1).join(" ");
+    const tok = `[${body}]`;
+
+    /* inside REPEAT/SPELL only the matching close is legal */
+    if (container) {
+      if (closing && kw === container.kind.toUpperCase()) { closeContainer(); continue; }
+      err(`${tok} can't appear inside [${container.kind.toUpperCase()}] — only plain text there.`);
+      continue;
+    }
+
+    if (!closing) {
+      if (kw === "PAUSE") {
+        if (arg && !NUM.test(arg)) { badNum(tok, arg); continue; }
+        const n = arg ? parseFloat(arg) : 0.7;
+        if (!Number.isFinite(n) || n < 0 || n > 30) { err(`${tok}: pause must be a number of seconds from 0 to 30, like [PAUSE 1.5].`); continue; }
+        items.push({ type:"pause", seconds:n });
+      }
+      else if (kw === "BREATH") items.push({ type:"pause", seconds:0.35 });
+      else if (kw === "CHIME" || kw === "DING") {
+        if (tier === "system") { err(`${tok} needs Fast or Studio.`); continue; }
+        items.push({ type:"tone", kind: kw.toLowerCase() });
+      }
+      else if (["SLOW","FAST","WHISPER","EMPHASIZE"].includes(kw)) {
+        const v = kw.toLowerCase();
+        if (open.pace) { err(`${tok}: [${open.pace.toUpperCase()}] is still open — close it first with [/${open.pace.toUpperCase()}].`); continue; }
+        if (tier === "system" && !INSTANT_OK.pace.includes(v)) { err(`${tok} needs Fast or Studio — Instant can't shape its audio.`); continue; }
+        open.pace = v; style.pace = v;
+      }
+      else if (kw === "VOICE") {
+        if (open.voice) { err(`${tok}: [VOICE ${open.voice}] is still open — close it with [/VOICE] first.`); continue; }
+        if (!arg) { err(`[VOICE] needs a name, like [VOICE bella].`); continue; }
+        const hit = resolveVoice(arg);
+        if (!hit) { err(`[VOICE ${arg}]: no ${tier === "system" ? "Edge" : tier} voice matches "${arg}".`); continue; }
+        open.voice = arg; style.voice = hit.id; style.voiceLabel = hit.label;
+      }
+      else if (kw === "VOLUME" || kw === "LOUD" || kw === "QUIET") {
+        if (open.volume) { err(`${tok}: a volume tag is still open — close it first.`); continue; }
+        if (kw === "VOLUME" && !NUM.test(arg)) { badNum(tok, arg || "(missing)"); continue; }
+        let v = kw === "LOUD" ? 1.4 : kw === "QUIET" ? 0.5 : parseFloat(arg);
+        if (kw === "VOLUME" && (!Number.isFinite(v) || v < 0.1 || v > 2)) { err(`${tok}: volume must be 0.1 to 2, like [VOLUME 0.6].`); continue; }
+        open.volume = kw.toLowerCase(); style.volume = v;
+      }
+      else if (kw === "PITCH") {
+        if (tier === "system") { err(`${tok} needs Fast or Studio — Edge voices ignore pitch.`); continue; }
+        if (open.pitch) { err(`${tok}: [PITCH] is still open — close it with [/PITCH] first.`); continue; }
+        if (!NUM.test(arg)) { badNum(tok, arg || "(missing)"); continue; }
+        const v = parseFloat(arg);
+        if (!Number.isFinite(v) || v < 0.5 || v > 2) { err(`${tok}: pitch must be 0.5 to 2, like [PITCH 0.8].`); continue; }
+        open.pitch = "pitch"; style.pitch = v;
+      }
+      else if (EFFECTS.includes(kw.toLowerCase())) {
+        if (tier === "system") { err(`${tok} needs Fast or Studio — effects require the audio buffer.`); continue; }
+        if (open.effect) { err(`${tok}: [${open.effect.toUpperCase()}] is still open — close it first.`); continue; }
+        open.effect = kw.toLowerCase(); style.effect = kw.toLowerCase();
+      }
+      else if (kw === "REPEAT") {
+        if (!/^\d+$/.test(arg)) { err(`${tok}: use [REPEAT 3] with a whole number from 2 to 10.`); continue; }
+        const n = parseInt(arg, 10);
+        if (!Number.isFinite(n) || n < 2 || n > 10) { err(`${tok}: use [REPEAT 3] with a count from 2 to 10.`); continue; }
+        container = { kind:"repeat", n, text:"" };
+      }
+      else if (kw === "SPELL") container = { kind:"spell", text:"" };
+      else err(`${tok} isn't a direction I know. Check spelling — e.g. [PAUSE 1.5], [WHISPER], [VOICE bella] — or remove the brackets.`);
+    }
+    else { /* closing tags */
+      if (["SLOW","FAST","WHISPER","EMPHASIZE"].includes(kw)) {
+        if (open.pace !== kw.toLowerCase()) { err(`${tok} has no matching open [${kw}].`); continue; }
+        open.pace = null; style.pace = null;
+      }
+      else if (kw === "VOICE")  { if (!open.voice)  { err(`${tok} has no matching open [VOICE …].`); continue; } open.voice = null;  style.voice = null; style.voiceLabel = null; }
+      else if (["VOLUME","LOUD","QUIET"].includes(kw)) {
+        if (open.volume !== kw.toLowerCase()) { err(`${tok} has no matching open [${kw}].`); continue; }
+        open.volume = null; style.volume = 1;
+      }
+      else if (kw === "PITCH")  { if (!open.pitch)  { err(`${tok} has no matching open [PITCH …].`); continue; } open.pitch = null;  style.pitch = null; }
+      else if (EFFECTS.includes(kw.toLowerCase())) {
+        if (open.effect !== kw.toLowerCase()) { err(`${tok} has no matching open [${kw}].`); continue; }
+        open.effect = null; style.effect = null;
+      }
+      else if (["REPEAT","SPELL"].includes(kw)) err(`${tok} has no matching open [${kw} …].`);
+      else err(`${tok} isn't a direction I know.`);
+    }
+  }
+  pushText(input.slice(last));
+
+  if (container) { err(`[${container.kind.toUpperCase()}] was never closed — add [/${container.kind.toUpperCase()}].`); }
+  for (const [ch, v] of Object.entries(open)) {
+    if (v && ch !== "voice") warnings.push(`[${String(v).toUpperCase()}] wasn't closed — applied to the end.`);
+    if (v && ch === "voice") warnings.push(`[VOICE ${v}] wasn't closed — applied to the end.`);
+  }
+  if (!items.some(i => i.type === "text" || i.type === "tone")) err("Nothing to speak once directions were removed.");
+
+  const display = items.filter(i => i.type === "text").map(i => i.text).join(" ");
+  return { items, errors, warnings, display };
+}
+
+/* ============================================================
+   TEACHER CONSOLE
+   ============================================================ */
+function renderTeacher() {
   app.innerHTML = `
-    <div class="wrap">
+    <main>
       <header>
-        <p class="eyebrow">Room ${ROOM} · teacher</p>
-        <h1>Send to the screens</h1>
-        <p class="sub">This page never plays audio. It tells the classroom laptops what to say.</p>
-        <div class="status" id="status"></div>
+        <div class="wordmark">Classroom TTS<span class="dot">.</span></div>
+        <div class="tagline">room ${esc(ROOM)} · teacher console</div>
       </header>
 
-      <label for="text">Text to speak</label>
-      <textarea id="text" placeholder="Type here, then press Send. Ctrl+Enter also sends."></textarea>
+      <div class="presence" id="presence"></div>
 
-      <div class="grid2">
-        <div>
-          <label for="target">Send to</label>
-          <select id="target">
-            <option value="all">Both screens</option>
-            <option value="screen1">Screen 1 only</option>
-            <option value="screen2">Screen 2 only</option>
-          </select>
+      <div class="engines" role="group" aria-label="Choose a speech engine">
+        <button class="engine" data-engine="system" aria-pressed="true">
+          <div class="tier">Instant</div>
+          <div class="ename">Edge voices</div>
+          <div class="emeta">0 MB · no delay<br>screens speak the text themselves</div>
+        </button>
+        <button class="engine" data-engine="piper" aria-pressed="false">
+          <div class="tier">Fast</div>
+          <div class="ename">Piper</div>
+          <div class="emeta">20–110 MB/voice, this laptop only<br>near-realtime · full effects</div>
+        </button>
+        <button class="engine" data-engine="kokoro" aria-pressed="false">
+          <div class="tier">Studio</div>
+          <div class="ename">Kokoro-82M</div>
+          <div class="emeta">~92 MB once, this laptop only<br>best quality · full effects</div>
+        </button>
+      </div>
+
+      <div class="bench">
+        <textarea id="text" placeholder="Type what the screens should say… directions like [PAUSE], [VOICE bella], [SPELL]cat[/SPELL] welcome." spellcheck="true"></textarea>
+
+        <div class="controls">
+          <div class="ctl">
+            <label for="target">Send to</label>
+            <select id="target">
+              <option value="all">Both screens</option>
+              <option value="screen1">Screen 1</option>
+              <option value="screen2">Screen 2</option>
+            </select>
+          </div>
+          <div class="ctl">
+            <label for="voice">Voice</label>
+            <select id="voice"></select>
+          </div>
+          <div class="ctl" id="ctl-effect">
+            <label for="effect">Effect</label>
+            <select id="effect">
+              <option value="none">None</option><option value="robot">Robot</option>
+              <option value="ghost">Ghost</option><option value="demon">Demon</option>
+              <option value="chipmunk">Chipmunk</option><option value="telephone">Telephone</option>
+              <option value="echo">Echo</option><option value="reverse">Reversed</option>
+            </select>
+          </div>
+          <div class="ctl slider">
+            <label for="rate">Speed</label>
+            <div class="row"><input type="range" id="rate" min="0.5" max="1.6" step="0.05" value="0.9"><output id="rate-out">0.90</output></div>
+          </div>
+          <div class="ctl slider" id="ctl-pitch">
+            <label for="pitch">Pitch</label>
+            <div class="row"><input type="range" id="pitch" min="0.5" max="2" step="0.05" value="1"><output id="pitch-out">1.00</output></div>
+          </div>
+          <div class="ctl" id="ctl-device">
+            <label for="device">Compute</label>
+            <select id="device"><option value="webgpu">WebGPU (GPU)</option><option value="wasm">WASM (CPU)</option></select>
+          </div>
+          <div class="actions">
+            <button class="btn primary" id="send">Send to screens</button>
+            <button class="btn" id="preview">Preview here</button>
+            <button class="btn" id="stopall">Stop all</button>
+            <button class="btn" id="download" disabled>.wav</button>
+          </div>
         </div>
-        <div>
-          <label for="voice">Voice</label>
-          <select id="voice"></select>
+
+        <div class="console ready" id="console">
+          <span class="led"></span><span class="msg" id="status">Ready.</span>
+          <span class="progress" id="progress"><i id="progress-fill"></i></span>
+        </div>
+
+        <div class="wavewrap" id="wavewrap">
+          <canvas id="wave" height="80" aria-label="Audio waveform"></canvas>
+          <div class="wavehint" id="wavehint">studio audio appears here</div>
         </div>
       </div>
 
-      <label for="rate">Speed — <span id="ratev">0.9</span>x</label>
-      <input type="range" id="rate" min="0.5" max="1.4" step="0.05" value="0.9">
+      <div class="hist"><h2>Recent — resends exactly as sent, instantly</h2><div id="hist"></div></div>
 
-      <div class="row" style="margin-top:22px">
-        <button id="send">Send</button>
-        <button id="stop" class="ghost">Stop all</button>
+      <div class="notes">
+        <div class="note kok"><b>Directions</b> (never spoken aloud): <code>[PAUSE 1.5]</code> · <code>[PAUSE]</code> 0.7s · <code>[BREATH]</code> ·
+          <code>[SLOW]…[/SLOW]</code> · <code>[FAST]…[/FAST]</code> · <code>[VOICE bella]…[/VOICE]</code> ·
+          <code>[REPEAT 3]cat[/REPEAT]</code> · <code>[SPELL]cat[/SPELL]</code> ·
+          <code>[LOUD]…[/LOUD]</code> · <code>[QUIET]…[/QUIET]</code> · <code>[VOLUME 0.6]…[/VOLUME]</code>.
+          Fast &amp; Studio only: <code>[WHISPER]</code> · <code>[EMPHASIZE]</code> · <code>[PITCH 0.8]</code> ·
+          <code>[CHIME]</code> · <code>[DING]</code> · effect tags like <code>[ROBOT]…[/ROBOT]</code>.
+          A typo in a bracket blocks the send and names the problem — nothing broken ever reaches the screens.</div>
+        <div class="note fx"><b>Tips:</b> put <code>[PAUSE]</code> between sentences, not mid-clause — engines restart their intonation at every split,
+          so inside a sentence an ellipsis… usually sounds smoother. Directions combine across kinds
+          (<code>[VOICE bella][SLOW]…[/SLOW][/VOICE]</code>) but not within one kind. On Studio, Nicole is a genuinely whispery voice —
+          <code>[VOICE nicole]</code> often beats <code>[WHISPER]</code>.</div>
+        <div class="note sys"><b>Instant</b> sends text; the screen's own Edge voice speaks it with zero delay.</div>
+        <div class="note pip"><b>Fast</b> synthesizes here in about realtime, then ships audio — the everyday tier. First use of each voice downloads it to this laptop only.</div>
+        <div class="note kok"><b>Studio</b> is the best quality and the slowest to chew; use it for prepared read-alouds. Both screens receive identical audio, and resends replay the cached audio instantly.</div>
       </div>
 
-      <div class="hist"><label>Recent — click to repeat</label><div id="hist"></div></div>
-    </div>`;
+      <footer>kokoro-js 1.2.1 · piper-tts-web 1.0.4 · soundtouchjs 0.3.0 · Web Speech API · mqtt via ${esc(BROKER.split("//")[1].split(":")[0])}</footer>
+    </main>`;
 
   const $ = id => document.getElementById(id);
-  const statusEl = $("status");
-  const presence = {};
+  const els = {
+    text:$("text"), target:$("target"), voice:$("voice"), effect:$("effect"), ctlEffect:$("ctl-effect"),
+    rate:$("rate"), rateOut:$("rate-out"), pitch:$("pitch"), pitchOut:$("pitch-out"), ctlPitch:$("ctl-pitch"),
+    device:$("device"), ctlDevice:$("ctl-device"), send:$("send"), preview:$("preview"),
+    stopall:$("stopall"), download:$("download"), console:$("console"), status:$("status"),
+    progress:$("progress"), progressFill:$("progress-fill"), wave:$("wave"), wavehint:$("wavehint"),
+    wavewrap:$("wavewrap"), presence:$("presence"), hist:$("hist"),
+  };
 
-  const drawStatus = (conn) => {
-    statusEl.innerHTML =
-      `<span class="chip" data-live="${conn?1:0}">broker ${conn?"connected":"offline"}</span>` +
-      SCREENS.map((s,i) => {
-        const live = presence[s] === "online";
-        return `<span class="chip" data-live="${live?1:0}">screen ${i+1} ${live?"live":"not open"}</span>`;
+  const state = {
+    engine:"system", audioCtx:null,
+    buffer:null, blob:null,
+    kokoro:{ tts:null, device:null, loading:null },
+    piperKey:null, piperMod:null, soundtouchMod:null,
+    presence:{}, connected:false,
+    localSeq:null,           // cancel handle for local Instant preview
+  };
+
+  /* ---------- persistence ---------- */
+  const LS = "classroomtts.settings";
+  const load = () => { try { return JSON.parse(localStorage.getItem(LS) || "{}"); } catch { return {}; } };
+  function save() {
+    try {
+      const prev = load();
+      localStorage.setItem(LS, JSON.stringify({
+        ...prev, engine: state.engine,
+        voice: { ...(prev.voice || {}), [state.engine]: els.voice.value },
+        rate: els.rate.value, pitch: els.pitch.value, effect: els.effect.value, device: els.device.value,
+      }));
+    } catch {}
+  }
+
+  function setStatus(msg, mode = "ready", pct = null) {
+    els.status.textContent = msg;
+    els.console.className = "console " + mode;
+    if (pct === null) { els.progress.classList.remove("on"); els.progressFill.style.width = "0%"; }
+    else { els.progress.classList.add("on"); els.progressFill.style.width = Math.min(100, pct).toFixed(1) + "%"; }
+  }
+  const fmtMB = b => (b / 1048576).toFixed(1);
+
+  /* ---------- audio plumbing ---------- */
+  function ctx() {
+    if (!state.audioCtx) state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (state.audioCtx.state === "suspended") state.audioCtx.resume();
+    return state.audioCtx;
+  }
+  function encodeWav(float32, sampleRate) {
+    const n = float32.length, buf = new ArrayBuffer(44 + n * 2), dv = new DataView(buf);
+    const w = (off, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(off + i, s.charCodeAt(i)); };
+    w(0,"RIFF"); dv.setUint32(4, 36 + n * 2, true); w(8,"WAVE");
+    w(12,"fmt "); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
+    dv.setUint32(24,sampleRate,true); dv.setUint32(28,sampleRate*2,true); dv.setUint16(32,2,true); dv.setUint16(34,16,true);
+    w(36,"data"); dv.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) { const s = Math.max(-1, Math.min(1, float32[i])); dv.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true); }
+    return new Blob([buf], { type:"audio/wav" });
+  }
+  const blobToBase64 = blob => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(",")[1]);
+    r.onerror = rej; r.readAsDataURL(blob);
+  });
+  async function resampleTo(buffer, sr) {
+    if (buffer.sampleRate === sr) return buffer;
+    const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(buffer.duration * sr)), sr);
+    const src = off.createBufferSource();
+    src.buffer = buffer; src.connect(off.destination); src.start();
+    return off.startRendering();
+  }
+
+  /* ---------- SoundTouch: tempo (pitch-preserving) and pitch (length-preserving) ---------- */
+  async function soundtouchProcess(buffer, { tempo = 1, pitch = 1 } = {}) {
+    if (Math.abs(tempo - 1) < 0.001 && Math.abs(pitch - 1) < 0.001) return buffer;
+    state.soundtouchMod ??= await import("https://cdn.jsdelivr.net/npm/soundtouchjs@0.3.0/+esm");
+    const { SoundTouch, SimpleFilter } = state.soundtouchMod;
+    const sr = buffer.sampleRate, monoIn = buffer.getChannelData(0);
+    const mono = new Float32Array(monoIn.length + sr);   // 1s flush pad — the pipeline holds ~0.3s at EOS
+    mono.set(monoIn);
+    const st = new SoundTouch();
+    st.tempo = tempo; st.pitch = pitch;
+    const source = {
+      extract(target, numFrames, position) {
+        const n = Math.max(0, Math.min(numFrames, mono.length - position));
+        for (let i = 0; i < n; i++) { target[2*i] = mono[position + i]; target[2*i+1] = mono[position + i]; }
+        return n;
+      }
+    };
+    const filter = new SimpleFilter(source, st);
+    const STEP = 8192, tmp = new Float32Array(STEP * 2), chunks = [];
+    let total = 0;
+    const want = Math.ceil(monoIn.length / tempo);
+    while (total < want) {
+      const n = filter.extract(tmp, STEP);
+      if (!n) break;
+      const m = new Float32Array(n);
+      for (let i = 0; i < n; i++) m[i] = tmp[2*i];
+      chunks.push(m); total += n;
+    }
+    const out = ctx().createBuffer(1, Math.min(total, want) || 1, sr);
+    const dst = out.getChannelData(0);
+    let off = 0;
+    for (const c of chunks) {
+      const take = Math.min(c.length, dst.length - off);
+      if (take <= 0) break;
+      dst.set(c.subarray(0, take), off); off += take;
+    }
+    return out;
+  }
+
+  /* ---------- effects rack ---------- */
+  function makeImpulse(off, seconds, decay, darkHz = 0) {
+    const sr = off.sampleRate, len = Math.max(1, Math.floor(seconds * sr));
+    const buf = off.createBuffer(1, len, sr), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+    if (darkHz) { const a = Math.exp(-2 * Math.PI * darkHz / sr); let y = 0; for (let i = 0; i < len; i++) { y = (1 - a) * d[i] + a * y; d[i] = y; } }
+    return buf;
+  }
+  function shaperCurve(k) {
+    const n = 1024, curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x)); }
+    return curve;
+  }
+  async function renderEffect(base, fx) {
+    if (fx === "none") return base;
+    if (fx === "reverse") {
+      const out = ctx().createBuffer(1, base.length, base.sampleRate);
+      const src = base.getChannelData(0), dst = out.getChannelData(0);
+      for (let i = 0, n = src.length; i < n; i++) dst[i] = src[n - 1 - i];
+      return out;
+    }
+    const cfg = { robot:{rate:1,tail:.15}, ghost:{rate:.85,tail:2.6}, demon:{rate:.62,tail:1.8},
+                  chipmunk:{rate:1.5,tail:.05}, telephone:{rate:1,tail:.05}, echo:{rate:1,tail:2.2} }[fx];
+    const sr = base.sampleRate;
+    const off = new OfflineAudioContext(1, Math.ceil((base.duration / cfg.rate + cfg.tail) * sr), sr);
+    const src = off.createBufferSource();
+    src.buffer = base; src.playbackRate.value = cfg.rate;
+    const out = off.createGain(); out.connect(off.destination);
+    if (fx === "robot") {
+      const hp = off.createBiquadFilter(); hp.type="highpass"; hp.frequency.value=140;
+      const ws = off.createWaveShaper(); ws.curve = shaperCurve(6);
+      const ring = off.createGain(); ring.gain.value = 0;
+      const osc = off.createOscillator(); osc.type="sine"; osc.frequency.value=32;
+      osc.connect(ring.gain); osc.start();
+      src.connect(hp); hp.connect(ws); ws.connect(ring); ring.connect(out); out.gain.value = 1.15;
+    } else if (fx === "ghost") {
+      const dry = off.createGain(); dry.gain.value=.4; src.connect(dry); dry.connect(out);
+      const conv = off.createConvolver(); conv.buffer = makeImpulse(off,2.6,2.8);
+      const wet = off.createGain(); wet.gain.value=.85; src.connect(conv); conv.connect(wet); wet.connect(out);
+      const delay = off.createDelay(1); delay.delayTime.value=.28;
+      const fb = off.createGain(); fb.gain.value=.35;
+      const eo = off.createGain(); eo.gain.value=.4;
+      src.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(eo); eo.connect(out);
+    } else if (fx === "demon") {
+      const lp = off.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=2200;
+      const dry = off.createGain(); dry.gain.value=.8; src.connect(lp); lp.connect(dry); dry.connect(out);
+      const conv = off.createConvolver(); conv.buffer = makeImpulse(off,1.8,3.5,900);
+      const wet = off.createGain(); wet.gain.value=.55; src.connect(conv); conv.connect(wet); wet.connect(out);
+    } else if (fx === "chipmunk") {
+      src.connect(out);
+    } else if (fx === "telephone") {
+      const hp = off.createBiquadFilter(); hp.type="highpass"; hp.frequency.value=350;
+      const lp = off.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=3200;
+      const ws = off.createWaveShaper(); ws.curve = shaperCurve(3);
+      src.connect(hp); hp.connect(lp); lp.connect(ws); ws.connect(out); out.gain.value = 1.25;
+    } else if (fx === "echo") {
+      const dry = off.createGain(); dry.gain.value=.85; src.connect(dry); dry.connect(out);
+      const delay = off.createDelay(1); delay.delayTime.value=.3;
+      const fb = off.createGain(); fb.gain.value=.45;
+      const wet = off.createGain(); wet.gain.value=.5;
+      src.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(wet); wet.connect(out);
+    }
+    src.start();
+    return off.startRendering();
+  }
+
+  /* gain + optional lowpass, applied per segment (whisper / volume / emphasize) */
+  async function shapeSegment(buffer, gain, lowpassHz) {
+    if (!lowpassHz) {
+      if (Math.abs(gain - 1) < 0.001) return buffer;
+      const out = ctx().createBuffer(1, buffer.length, buffer.sampleRate);
+      const src = buffer.getChannelData(0), dst = out.getChannelData(0);
+      for (let i = 0; i < src.length; i++) dst[i] = Math.max(-1, Math.min(1, src[i] * gain));
+      return out;
+    }
+    const off = new OfflineAudioContext(1, buffer.length, buffer.sampleRate);
+    const src = off.createBufferSource(); src.buffer = buffer;
+    const lp = off.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = lowpassHz;
+    const g = off.createGain(); g.gain.value = gain;
+    src.connect(lp); lp.connect(g); g.connect(off.destination); src.start();
+    return off.startRendering();
+  }
+
+  /* [CHIME] two ascending notes, [DING] one — synthesized, no files */
+  async function renderTone(kind) {
+    const notes = kind === "chime" ? [[1046.5, 0, .22], [1318.5, .16, .3]] : [[880, 0, .35]];
+    const dur = Math.max(...notes.map(([,at,d]) => at + d)) + .08;
+    const off = new OfflineAudioContext(1, Math.ceil(dur * TARGET_SR), TARGET_SR);
+    for (const [freq, at, d] of notes) {
+      const osc = off.createOscillator(); osc.type = "sine"; osc.frequency.value = freq;
+      const g = off.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.5, at + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + d);
+      osc.connect(g); g.connect(off.destination);
+      osc.start(at); osc.stop(at + d);
+    }
+    return off.startRendering();
+  }
+
+  /* ---------- waveform ---------- */
+  let peaks = null;
+  function sizeCanvas() {
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    els.wave.width = Math.round((els.wave.clientWidth || 800) * dpr);
+    els.wave.height = Math.round(80 * dpr);
+    peaks = null; drawWave();
+  }
+  function drawWave() {
+    const c = els.wave.getContext("2d"), W = els.wave.width, H = els.wave.height;
+    c.clearRect(0, 0, W, H);
+    if (!state.buffer) { els.wavehint.style.display = "flex"; return; }
+    els.wavehint.style.display = "none";
+    const cols = Math.floor(W / 3);
+    if (!peaks) {
+      const data = state.buffer.getChannelData(0);
+      const step = Math.max(1, Math.floor(data.length / cols));
+      peaks = new Float32Array(cols);
+      for (let i = 0; i < cols; i++) {
+        let max = 0;
+        for (let j = 0; j < step && i * step + j < data.length; j++) { const v = Math.abs(data[i * step + j]); if (v > max) max = v; }
+        peaks[i] = max;
+      }
+    }
+    c.fillStyle = getComputedStyle(document.body).getPropertyValue("--acc").trim() || "#f5a95c";
+    for (let i = 0; i < cols; i++) {
+      const h = Math.max(2, peaks[i] * H * 0.86);
+      c.fillRect(i * 3, (H - h) / 2, 2, h);
+    }
+  }
+  addEventListener("resize", sizeCanvas);
+
+  /* ---------- voices ---------- */
+  let systemVoices = [];
+  function refreshSystemVoices() {
+    const en = speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang));
+    const rank = v => (/Natural/.test(v.name) ? 0 : v.localService ? 1 : 2);
+    systemVoices = en.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+    if (state.engine === "system") fillVoices();
+  }
+  const flatCatalog = groups => groups.flatMap(([, list]) => list);
+  function resolveVoice(q) {
+    const s = q.toLowerCase().trim();
+    if (state.engine === "system") {
+      const v = systemVoices.find(x => x.name.toLowerCase().includes(s));
+      return v ? { id: v.name, label: v.name.replace(/^Microsoft | Online \(Natural\)/g, "") } : null;
+    }
+    const cat = flatCatalog(state.engine === "piper" ? PIPER_VOICES : KOKORO_VOICES);
+    const hit =
+      cat.find(([id]) => id.toLowerCase() === s) ||
+      cat.find(([id]) => id.toLowerCase().split(/[_-]/).includes(s)) ||
+      cat.find(([id, label]) => id.toLowerCase().includes(s) || label.toLowerCase().includes(s));
+    return hit ? { id: hit[0], label: hit[1] } : null;
+  }
+  function fillVoices() {
+    const saved = load().voice?.[state.engine];
+    els.voice.innerHTML = "";
+    const opt = (parent, val, label) => { const o = document.createElement("option"); o.value = val; o.textContent = label; parent.appendChild(o); };
+    if (state.engine === "system") {
+      if (!systemVoices.length) { opt(els.voice, "", "No voices found"); return; }
+      const nat = document.createElement("optgroup"); nat.label = "Neural (Edge)";
+      const loc = document.createElement("optgroup"); loc.label = "Built-in";
+      for (const v of systemVoices)
+        opt(/Natural/.test(v.name) ? nat : loc, v.name, `${v.name.replace(/^Microsoft /,"").replace(/ Online \(Natural\)/,"")} — ${v.lang}`);
+      if (nat.children.length) els.voice.appendChild(nat);
+      if (loc.children.length) els.voice.appendChild(loc);
+    } else {
+      for (const [g, list] of (state.engine === "piper" ? PIPER_VOICES : KOKORO_VOICES)) {
+        const og = document.createElement("optgroup"); og.label = g;
+        for (const [val, label] of list) opt(og, val, label);
+        els.voice.appendChild(og);
+      }
+    }
+    if (saved && [...els.voice.querySelectorAll("option")].some(o => o.value === saved)) els.voice.value = saved;
+  }
+
+  /* ---------- engine switching ---------- */
+  function setEngine(engine) {
+    state.engine = engine;
+    document.body.dataset.engine = engine;
+    for (const b of document.querySelectorAll(".engine")) b.setAttribute("aria-pressed", String(b.dataset.engine === engine));
+    const buffered = engine !== "system";
+    els.ctlEffect.style.display = buffered ? "" : "none";
+    els.ctlPitch.style.display  = buffered ? "" : "none";
+    els.ctlDevice.style.display = engine === "kokoro" ? "" : "none";
+    els.wavewrap.style.display  = buffered ? "" : "none";
+    els.download.style.display  = buffered ? "" : "none";
+    els.send.textContent = buffered ? "Synthesize & send" : "Send to screens";
+    fillVoices(); drawWave(); save();
+  }
+  for (const b of document.querySelectorAll(".engine")) b.addEventListener("click", () => setEngine(b.dataset.engine));
+
+  /* ---------- engine: kokoro ---------- */
+  async function getKokoro(device) {
+    if (state.kokoro.tts && state.kokoro.device === device) return state.kokoro.tts;
+    if (state.kokoro.loading) return state.kokoro.loading;
+    state.kokoro.loading = (async () => {
+      setStatus("Loading kokoro-js…", "busy");
+      const { KokoroTTS } = await import("https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm");
+      const dtype = device === "webgpu" ? "fp32" : "q8";
+      const seen = new Map();
+      const tts = await KokoroTTS.from_pretrained(KOKORO_MODEL, {
+        dtype, device,
+        progress_callback: p => {
+          if (p.status === "progress" && p.total) {
+            seen.set(p.file, p);
+            let loaded = 0, total = 0;
+            for (const f of seen.values()) { loaded += f.loaded; total += f.total; }
+            setStatus(`Downloading Kokoro (${dtype}) — ${fmtMB(loaded)} / ${fmtMB(total)} MB`, "busy", loaded / total * 100);
+          }
+        },
+      });
+      state.kokoro.tts = tts; state.kokoro.device = device; state.kokoro.loading = null;
+      return tts;
+    })();
+    return state.kokoro.loading;
+  }
+  async function kokoroSegment(text, voice, speed) {
+    let device = els.device.value, tts;
+    try { tts = await getKokoro(device); }
+    catch (err) {
+      if (device !== "webgpu") throw err;
+      setStatus("WebGPU unavailable — falling back to CPU…", "busy");
+      state.kokoro.loading = null; els.device.value = device = "wasm";
+      tts = await getKokoro(device);
+    }
+    const audio = await tts.generate(text, { voice, speed: Math.max(.5, Math.min(2, speed)) });
+    const buf = ctx().createBuffer(1, audio.audio.length, audio.sampling_rate);
+    buf.getChannelData(0).set(audio.audio);
+    return buf;
+  }
+
+  /* ---------- engine: piper ---------- */
+  async function piperSegment(text, voiceId) {
+    setStatus("Loading Piper runtime…", "busy");
+    state.piperMod ??= await import("https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.4/+esm");
+    if (state.piperKey !== voiceId) {
+      // The library reuses one session and never reloads on voice change;
+      // resetting its singleton forces a clean init for the new voice.
+      state.piperMod.TtsSession._instance = null;
+      state.piperKey = voiceId;
+    }
+    const blob = await state.piperMod.predict({ text, voiceId }, p => {
+      if (p.total) setStatus(`Downloading ${p.url.split("/").pop()} — ${fmtMB(p.loaded)} / ${fmtMB(p.total)} MB`, "busy", p.loaded / p.total * 100);
+    });
+    return ctx().decodeAudioData(await blob.arrayBuffer());
+  }
+
+  /* ============================================================
+     BUFFER PIPELINE — items in, one AudioBuffer out
+     Every segment is resampled to TARGET_SR before splicing, so
+     pauses, chimes, and mixed-rate Piper voices line up exactly.
+     ============================================================ */
+  async function synthesizeItems(items) {
+    const baseRate = +els.rate.value;
+    const segs = [];
+    let n = 0;
+    const speakable = items.filter(i => i.type === "text").length;
+
+    for (const item of items) {
+      if (item.type === "pause") {
+        const buf = ctx().createBuffer(1, Math.max(1, Math.round(item.seconds * TARGET_SR)), TARGET_SR);
+        segs.push(buf); continue;
+      }
+      if (item.type === "tone") { segs.push(await renderTone(item.kind)); continue; }
+
+      n++;
+      const st = item.style;
+      const voice = st.voice || els.voice.value;
+      const paceMult = st.pace ? PACE_MULT[st.pace] : 1;
+      const speed = baseRate * paceMult;
+      if (speakable > 1) setStatus(`Synthesizing ${n}/${speakable}…`, "busy");
+      else setStatus("Synthesizing…", "busy");
+
+      let buf;
+      if (state.engine === "kokoro") {
+        buf = await kokoroSegment(item.text, voice, speed);   // native speed
+      } else {
+        buf = await piperSegment(item.text, voice);           // speed via time-stretch
+        if (Math.abs(speed - 1) > 0.001) buf = await soundtouchProcess(buf, { tempo: speed });
+      }
+      buf = await resampleTo(buf, TARGET_SR);
+
+      const gain = (st.pace === "whisper" ? 0.35 : 1) * (st.pace === "emphasize" ? 1.25 : 1) * st.volume;
+      buf = await shapeSegment(buf, gain, st.pace === "whisper" ? 4000 : 0);
+      if (st.effect) buf = await renderEffect(buf, st.effect);
+      if (st.pitch)  buf = await soundtouchProcess(buf, { pitch: st.pitch });
+      segs.push(buf);
+    }
+
+    const total = segs.reduce((s, b) => s + b.length, 0);
+    const out = ctx().createBuffer(1, Math.max(1, total), TARGET_SR);
+    const dst = out.getChannelData(0);
+    let off = 0;
+    for (const b of segs) { dst.set(b.getChannelData(0), off); off += b.length; }
+
+    let final = out;
+    const globalPitch = +els.pitch.value;
+    if (Math.abs(globalPitch - 1) > 0.001) { setStatus("Applying pitch…", "busy"); final = await soundtouchProcess(final, { pitch: globalPitch }); }
+    if (els.effect.value !== "none") { setStatus(`Rendering ${els.effect.value}…`, "busy"); final = await renderEffect(final, els.effect.value); }
+    return final;
+  }
+
+  /* ---------- Instant: items -> wire segments ---------- */
+  function itemsToSegments(items) {
+    const baseRate = +els.rate.value;
+    return items.map(i => i.type === "pause"
+      ? { p: i.seconds }
+      : { t: i.text, v: i.style.voice || els.voice.value,
+          r: Math.max(.1, Math.min(10, baseRate * (i.style.pace ? PACE_MULT[i.style.pace] : 1))),
+          vol: Math.max(0, Math.min(1, i.style.volume)) });
+  }
+
+  /* local sequential playback of Instant segments (Preview) */
+  function playSegmentsLocal(segments) {
+    stopLocal();
+    let idx = 0, timer = null, live = true;
+    const next = () => {
+      if (!live || idx >= segments.length) { state.localSeq = null; return; }
+      const s = segments[idx++];
+      if (s.p !== undefined) { timer = setTimeout(next, s.p * 1000); return; }
+      const u = new SpeechSynthesisUtterance(s.t);
+      const v = speechSynthesis.getVoices().find(x => x.name === s.v);
+      if (v) u.voice = v;
+      u.rate = s.r; u.volume = s.vol;
+      u.onend = u.onerror = next;
+      speechSynthesis.speak(u);
+    };
+    state.localSeq = () => { live = false; clearTimeout(timer); speechSynthesis.cancel(); };
+    next();
+  }
+  function stopLocal() {
+    if (state.localSeq) state.localSeq();
+    state.localSeq = null;
+    speechSynthesis.cancel();
+  }
+
+  /* ---------- mqtt ---------- */
+  const client = connect();
+  function drawPresence() {
+    els.presence.innerHTML =
+      `<span class="chip" data-live="${state.connected ? 1 : 0}">broker ${state.connected ? "connected" : "offline"}</span>` +
+      SCREENS.map((s, i) => {
+        const p = state.presence[s];
+        const live = p === "online";
+        return `<span class="chip" data-live="${live ? 1 : 0}">screen ${i + 1} ${live ? "live" : p === "open" ? "open, not armed" : "closed"}</span>`;
       }).join("");
-  };
-  drawStatus(false);
+  }
+  drawPresence();
+  client.on("connect", () => { state.connected = true; drawPresence(); client.subscribe(TOPIC.presAll(ROOM)); });
+  client.on("close",   () => { state.connected = false; drawPresence(); });
+  client.on("message", (t, buf) => { state.presence[t.split("/").pop()] = buf.toString(); drawPresence(); });
 
-  const fillVoices = () => {
-    const list = voiceList();
-    if(!list.length) return;
-    const pref = localStorage.getItem("ctts_voice");
-    $("voice").innerHTML = list.map(v =>
-      `<option value="${v.name.replace(/"/g,"&quot;")}">${v.name.replace(/Microsoft |Online \(Natural\) /g,"")} — ${v.lang}</option>`
-    ).join("");
-    if(pref && list.some(v => v.name === pref)) $("voice").value = pref;
-  };
-  fillVoices();
-  speechSynthesis.onvoiceschanged = fillVoices;
-
-  const client = connect({});
-  client.on("connect", () => {
-    drawStatus(true);
-    client.subscribe(T.presAll(ROOM));
-  });
-  client.on("close", () => drawStatus(false));
-  client.on("message", (topic, buf) => {
-    const id = topic.split("/").pop();
-    presence[id] = buf.toString();
-    drawStatus(client.connected);
-  });
-
-  const history = [];
-  const drawHist = () => {
-    $("hist").innerHTML = history.map((h,i) =>
-      `<div class="item"><span class="txt">${h.text.replace(/</g,"&lt;")}</span>
-       <button class="small ghost" data-i="${i}">Repeat</button></div>`).join("");
-    $("hist").querySelectorAll("button").forEach(b =>
-      b.addEventListener("click", () => publish(history[+b.dataset.i], false)));
-  };
-
-  function publish(msg, remember = true){
-    if(!client.connected) return;
-    client.publish(T.say(ROOM), JSON.stringify(msg));
-    if(remember){
-      history.unshift(msg);
-      if(history.length > 8) history.pop();
-      drawHist();
+  function publishAudio(b64, text, target) {
+    const id = Math.random().toString(36).slice(2, 10);
+    const n = Math.ceil(b64.length / CHUNK_LEN);
+    client.publish(TOPIC.audio(ROOM), JSON.stringify({ id, target, text, chunks: n }));
+    for (let i = 0; i < n; i++) {
+      client.publish(TOPIC.chunk(ROOM), JSON.stringify({ id, i, d: b64.slice(i * CHUNK_LEN, (i + 1) * CHUNK_LEN) }));
+      setStatus(`Sending audio — ${i + 1}/${n}`, "busy", (i + 1) / n * 100);
     }
   }
 
-  $("rate").addEventListener("input", e => { $("ratev").textContent = e.target.value; });
+  /* ---------- history (cache-as-sent) ---------- */
+  const history = [];
+  function fxLabel(entry) {
+    if (entry.kind === "say") return "instant";
+    const tags = [entry.tier];
+    if (entry.fx) tags.push("fx");
+    return tags.join(" · ");
+  }
+  function drawHistory() {
+    els.hist.innerHTML = history.map((h, i) => `
+      <div class="hitem">
+        <span class="txt">${esc(h.display)}</span>
+        <span class="meta">${esc(fxLabel(h))} · ${esc(h.label)}</span>
+        <button class="btn" data-i="${i}">Resend</button>
+      </div>`).join("");
+    els.hist.querySelectorAll("button").forEach(b => b.addEventListener("click", () => resend(history[+b.dataset.i])));
+  }
+  function remember(entry) { history.unshift(entry); if (history.length > 8) history.pop(); drawHistory(); }
+  function resend(h) {
+    if (!state.connected) return setStatus("Not connected to the broker.", "error");
+    if (h.kind === "say") client.publish(TOPIC.say(ROOM), JSON.stringify({ target: els.target.value, display: h.display, segments: h.segments }));
+    else publishAudio(h.b64, h.display, els.target.value);
+    setStatus("Resent exactly as originally sent.", "ready");
+  }
 
-  $("send").addEventListener("click", () => {
-    const text = $("text").value.trim();
-    if(!text) return;
-    localStorage.setItem("ctts_voice", $("voice").value);
-    publish({ text, target: $("target").value, voice: $("voice").value, rate: parseFloat($("rate").value) });
-    $("text").select();
+  /* ---------- parse + report ---------- */
+  function parseOrReport() {
+    const text = els.text.value.trim();
+    if (!text) { setStatus("Type something first.", "ready"); els.text.focus(); return null; }
+    const r = parseDirections(text, state.engine, resolveVoice);
+    if (r.errors.length) {
+      setStatus(r.errors[0] + (r.errors.length > 1 ? ` (+${r.errors.length - 1} more — fix and retry)` : ""), "error");
+      return null;
+    }
+    return r;
+  }
+  const noteWarnings = (r, base) =>
+    setStatus(r.warnings.length ? `${base} Note: ${r.warnings[0]}` : base, "ready");
+
+  /* ---------- actions ---------- */
+  els.rate.addEventListener("input",  () => { els.rateOut.textContent  = (+els.rate.value).toFixed(2); save(); });
+  els.pitch.addEventListener("input", () => { els.pitchOut.textContent = (+els.pitch.value).toFixed(2); save(); });
+  els.voice.addEventListener("change", save);
+  els.effect.addEventListener("change", save);
+  els.device.addEventListener("change", () => { state.kokoro.tts = null; state.kokoro.loading = null; save(); });
+
+  els.send.addEventListener("click", async () => {
+    const r = parseOrReport();
+    if (!r) return;
+    if (!state.connected) return setStatus("Not connected to the broker.", "error");
+    els.send.disabled = true;
+    try {
+      if (state.engine === "system") {
+        const segments = itemsToSegments(r.items);
+        client.publish(TOPIC.say(ROOM), JSON.stringify({ target: els.target.value, display: r.display, segments }));
+        remember({ kind:"say", display: r.display, segments,
+                   label: (els.voice.value || "").replace(/^Microsoft | Online \(Natural\)/g, "") });
+        noteWarnings(r, "Sent.");
+        els.text.select();
+      } else {
+        const t0 = performance.now();
+        state.buffer = await synthesizeItems(r.items);
+        state.blob = encodeWav(state.buffer.getChannelData(0), state.buffer.sampleRate);
+        els.download.disabled = false;
+        peaks = null; drawWave();
+        const b64 = await blobToBase64(state.blob);
+        publishAudio(b64, r.display, els.target.value);
+        const usedFx = els.effect.value !== "none" || r.items.some(i => i.style?.effect);
+        remember({ kind:"audio", display: r.display, b64, tier: state.engine === "piper" ? "fast" : "studio",
+                   fx: usedFx, label: els.voice.value });
+        const dt = ((performance.now() - t0) / 1000).toFixed(1);
+        noteWarnings(r, `Sent — ${state.buffer.duration.toFixed(1)}s of audio in ${dt}s.`);
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus("Error: " + (err?.message || err), "error");
+    } finally { els.send.disabled = false; }
   });
 
-  $("text").addEventListener("keydown", e => {
-    if(e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("send").click();
+  els.preview.addEventListener("click", async () => {
+    const r = parseOrReport();
+    if (!r) return;
+    els.preview.disabled = true;
+    try {
+      if (state.engine === "system") {
+        playSegmentsLocal(itemsToSegments(r.items));
+        noteWarnings(r, "Previewing on this laptop only.");
+      } else {
+        state.buffer = await synthesizeItems(r.items);
+        state.blob = encodeWav(state.buffer.getChannelData(0), state.buffer.sampleRate);
+        els.download.disabled = false;
+        peaks = null; drawWave();
+        const src = ctx().createBufferSource();
+        src.buffer = state.buffer; src.connect(ctx().destination); src.start();
+        noteWarnings(r, "Previewing on this laptop only. Send ships this exact audio.");
+      }
+    } catch (err) { setStatus("Error: " + (err?.message || err), "error"); }
+    finally { els.preview.disabled = false; }
   });
 
-  $("stop").addEventListener("click", () => {
-    if(client.connected) client.publish(T.stop(ROOM), "1");
+  els.stopall.addEventListener("click", () => {
+    stopLocal();
+    if (state.connected) client.publish(TOPIC.stop(ROOM), "1");
+    setStatus("Stopped.", "ready");
   });
+
+  els.download.addEventListener("click", () => {
+    if (!state.blob) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(state.blob);
+    a.download = `classroom-${els.voice.value}-${new Date().toISOString().slice(0,19).replace(/[:T]/g,"-")}.wav`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  });
+
+  els.text.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") els.send.click(); });
+
+  /* ---------- boot ---------- */
+  refreshSystemVoices();
+  speechSynthesis.addEventListener?.("voiceschanged", refreshSystemVoices);
+  const saved = load();
+  if (saved.rate)  { els.rate.value  = saved.rate;  els.rateOut.textContent  = (+saved.rate).toFixed(2); }
+  if (saved.pitch) { els.pitch.value = saved.pitch; els.pitchOut.textContent = (+saved.pitch).toFixed(2); }
+  if (saved.effect) els.effect.value = saved.effect;
+  if (!("gpu" in navigator)) {
+    els.device.value = "wasm";
+    const o = els.device.querySelector('[value="webgpu"]');
+    o.disabled = true; o.textContent = "WebGPU (unavailable)";
+  } else if (saved.device) els.device.value = saved.device;
+  setEngine(["system","piper","kokoro"].includes(saved.engine) ? saved.engine : "system");
+  sizeCanvas(); drawHistory();
 }
 
-/* ---------------- classroom screen / receiver ---------------- */
-function renderReceiver(){
+/* ============================================================
+   CLASSROOM SCREEN
+   Never downloads an engine. Two jobs only:
+   speak text segments with its own Edge voice, or play audio.
+   ============================================================ */
+function renderScreen() {
   document.body.classList.add("recv");
   const n = SCREENS.indexOf(MY_ID) + 1;
   app.innerHTML = `
-    <button class="arm" id="arm">Tap to go live<br><span style="font-size:.35em;font-weight:400;opacity:.8">Screen ${n||"?"} · room ${ROOM}</span></button>
+    <button class="arm" id="arm">Tap to go live<span>screen ${n || "?"} · room ${esc(ROOM)}</span></button>
     <div class="stage" id="stage">
       <div class="spoken" id="spoken"></div>
-      <div class="idle" id="idle">Ready</div>
+      <div class="rstat" id="rstat">Ready</div>
     </div>
-    <div class="badge" id="badge" style="display:none">Screen ${n||"?"} · <b>live</b></div>`;
+    <div class="badge" id="badge" data-live="0" style="display:none"><span id="badgetxt">connecting</span></div>`;
 
   const $ = id => document.getElementById(id);
-  let client = null, keepAlive = null;
+  let client = null, audioCtx = null, source = null, keepAlive = null, armed = false;
+  let seqCancel = null;
+  const pending = new Map();
 
-  // Warm the speech engine with a silent utterance so the first real one isn't delayed.
-  function arm(){
-    const u = new SpeechSynthesisUtterance(" ");
-    u.volume = 0;
-    speechSynthesis.speak(u);
+  const setStat  = t => { $("rstat").textContent = t; };
+  const setBadge = (live, txt) => { $("badge").dataset.live = live ? "1" : "0"; $("badgetxt").textContent = txt; };
+
+  function stopEverything() {
+    if (seqCancel) { seqCancel(); seqCancel = null; }
+    speechSynthesis.cancel();
+    clearInterval(keepAlive);
+    if (source) { try { source.stop(); } catch {} source = null; }
+    setStat("Ready");
+  }
+
+  /* sequential text segments -> local Edge voice */
+  function speakSegments(display, segments) {
+    stopEverything();
+    $("spoken").textContent = display;
+    setStat("Speaking");
+    let idx = 0, timer = null, live = true;
+    const done = () => { seqCancel = null; setStat("Ready"); clearInterval(keepAlive); };
+    const next = () => {
+      if (!live) return;
+      if (idx >= segments.length) return done();
+      const s = segments[idx++];
+      if (s.p !== undefined) { timer = setTimeout(next, s.p * 1000); return; }
+      const u = new SpeechSynthesisUtterance(s.t);
+      const v = speechSynthesis.getVoices().find(x => x.name === s.v);
+      if (v) u.voice = v;
+      u.rate = s.r || 1;
+      if (s.vol !== undefined) u.volume = s.vol;
+      u.onend = u.onerror = next;
+      speechSynthesis.speak(u);
+    };
+    seqCancel = () => { live = false; clearTimeout(timer); };
+    keepAlive = setInterval(() => {
+      if (speechSynthesis.speaking) { speechSynthesis.pause(); speechSynthesis.resume(); }
+    }, 10000);
+    next();
+  }
+
+  async function playAudio(b64, text) {
+    stopEverything();
+    $("spoken").textContent = text;
+    setStat("Playing");
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const buf = await audioCtx.decodeAudioData(bytes.buffer);
+    source = audioCtx.createBufferSource();
+    source.buffer = buf;
+    source.connect(audioCtx.destination);
+    source.onended = () => setStat("Ready");
+    source.start();
+  }
+
+  function handle(topic, buf) {
+    if (topic === TOPIC.stop(ROOM)) return stopEverything();
+    let msg;
+    try { msg = JSON.parse(buf.toString()); } catch { return; }
+
+    if (topic === TOPIC.say(ROOM)) {
+      if (msg.target !== "all" && msg.target !== MY_ID) return;
+      if (!armed) return;
+      if (msg.segments) speakSegments(msg.display || "", msg.segments);
+      else if (msg.text) speakSegments(msg.text, [{ t: msg.text, v: msg.voice, r: msg.rate }]); // older console pages
+      return;
+    }
+    if (topic === TOPIC.audio(ROOM)) {
+      if (msg.target !== "all" && msg.target !== MY_ID) return;
+      pending.set(msg.id, { meta: msg, parts: new Array(msg.chunks), have: 0 });
+      setStat("Receiving");
+      setTimeout(() => pending.delete(msg.id), 30000);
+      return;
+    }
+    if (topic === TOPIC.chunk(ROOM)) {
+      const entry = pending.get(msg.id);
+      if (!entry) return;
+      if (entry.parts[msg.i] === undefined) { entry.parts[msg.i] = msg.d; entry.have++; }
+      if (entry.have === entry.meta.chunks) {
+        pending.delete(msg.id);
+        if (armed) playAudio(entry.parts.join(""), entry.meta.text).catch(() => setStat("Audio error"));
+      }
+    }
+  }
+
+  function start() {
+    client = connect({ will: { topic: TOPIC.pres(ROOM, MY_ID), payload: "offline", retain: true, qos: 0 } });
+    client.on("connect", () => {
+      setBadge(armed, armed ? "live" : "open, not armed");
+      client.publish(TOPIC.pres(ROOM, MY_ID), armed ? "online" : "open", { retain: true });
+      client.subscribe([TOPIC.say(ROOM), TOPIC.audio(ROOM), TOPIC.chunk(ROOM), TOPIC.stop(ROOM)]);
+    });
+    client.on("close", () => setBadge(false, "reconnecting"));
+    client.on("message", handle);
+  }
+
+  $("arm").addEventListener("click", () => {
+    armed = true;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const warm = new SpeechSynthesisUtterance(" ");
+    warm.volume = 0;
+    speechSynthesis.speak(warm);
+    audioCtx.resume();
     $("arm").style.display = "none";
     $("stage").classList.add("on");
-    $("badge").style.display = "block";
-    start();
-    if(document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
-  }
-
-  function speak(msg){
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(msg.text);
-    const v = speechSynthesis.getVoices().find(x => x.name === msg.voice);
-    if(v) u.voice = v;
-    u.rate = msg.rate || 1;
-    $("spoken").textContent = msg.text;
-    $("idle").textContent = "Speaking";
-    u.onend = u.onerror = () => { $("idle").textContent = "Ready"; };
-    speechSynthesis.speak(u);
-
-    // Edge/Chrome stall out on utterances past ~15s unless nudged.
-    clearInterval(keepAlive);
-    keepAlive = setInterval(() => {
-      if(speechSynthesis.speaking){ speechSynthesis.pause(); speechSynthesis.resume(); }
-      else clearInterval(keepAlive);
-    }, 10000);
-  }
-
-  function start(){
-    client = connect({
-      will: { topic: T.pres(ROOM, MY_ID), payload: "offline", retain: true, qos: 0 }
-    });
-    client.on("connect", () => {
-      $("badge").classList.remove("down");
-      $("badge").querySelector("b").textContent = "live";
-      client.publish(T.pres(ROOM, MY_ID), "online", { retain: true });
-      client.subscribe([T.say(ROOM), T.stop(ROOM)]);
-    });
-    client.on("close", () => {
-      $("badge").classList.add("down");
-      $("badge").querySelector("b").textContent = "reconnecting";
-    });
-    client.on("message", (topic, buf) => {
-      if(topic === T.stop(ROOM)){
-        speechSynthesis.cancel();
-        $("idle").textContent = "Ready";
-        return;
-      }
-      let msg;
-      try { msg = JSON.parse(buf.toString()); } catch(e){ return; }
-      if(msg.target !== "all" && msg.target !== MY_ID) return;
-      speak(msg);
-    });
-  }
-
-  $("arm").addEventListener("click", arm);
-  window.addEventListener("beforeunload", () => {
-    if(client && client.connected) client.publish(T.pres(ROOM, MY_ID), "offline", { retain: true });
+    $("badge").style.display = "flex";
+    setBadge(true, "live");
+    if (client?.connected) client.publish(TOPIC.pres(ROOM, MY_ID), "online", { retain: true });
+    document.documentElement.requestFullscreen?.().catch(() => {});
   });
+  addEventListener("beforeunload", () => {
+    if (client?.connected) client.publish(TOPIC.pres(ROOM, MY_ID), "offline", { retain: true });
+  });
+
+  start();   // connect immediately so the console sees "open" before arming
 }
 
-/* ---------------- boot ---------------- */
-if(typeof mqtt === "undefined"){
-  app.innerHTML = '<div class="wrap"><header><h1>mqtt.min.js is missing</h1><p class="sub">Upload mqtt.min.js into the same folder as this page in your repo, then reload.</p></header></div>';
-} else if(ROLE === "setup" || !ROOM){
-  renderSetup();
-} else if(ROLE === "send"){
-  renderSender();
-} else {
-  renderReceiver();
-}
+/* ============================================================
+   ROUTER
+   ============================================================ */
+if (typeof mqtt === "undefined") {
+  app.innerHTML = `<main><header><div class="wordmark">Missing file<span class="dot">.</span></div></header>
+    <p style="color:var(--muted)">Upload <code>mqtt.min.js</code> into the same folder as this page, then reload.</p></main>`;
+} else if (ROLE === "setup" || !ROOM) renderSetup();
+else if (ROLE === "send") renderTeacher();
+else renderScreen();
 </script>
 </body>
 </html>
