@@ -127,17 +127,27 @@
        font-family:var(--sans);font-variation-settings:"wdth" 110,"wght" 800;
        font-size:5.5vw;letter-spacing:-.01em;cursor:pointer}
   .arm span{display:block;font-size:.28em;font-variation-settings:"wdth" 100,"wght" 400;color:var(--muted);margin-top:.6em;font-family:var(--mono)}
-  .stage{display:none;width:100vw;height:100vh;flex-direction:column;align-items:center;justify-content:center;padding:4vw;gap:4vh}
+  .stage{display:none;width:100vw;height:100vh;flex-direction:column;align-items:center;justify-content:center;padding:2vh 4vw;gap:2.5vh}
   .stage.on{display:flex}
   .spoken{font-size:clamp(34px,8vw,140px);font-variation-settings:"wdth" 112,"wght" 750;
           letter-spacing:-.025em;line-height:1.1;max-width:94vw}
+  /* With the robot on stage she takes the room and the text plays support. */
+  .stage.hasbot .spoken{font-size:clamp(26px,4.6vw,74px)}
+
+  .avatar{position:relative;width:min(56vh,52vw);aspect-ratio:1/1;flex:none;
+          animation:bob 4.5s ease-in-out infinite;will-change:transform}
+  .avatar .layer{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+                 pointer-events:none;user-select:none;-webkit-user-drag:none}
+  .avatar .layer.off{opacity:0}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.1%)}}
+  .avatar.talking{animation-duration:2.6s}
   .rstat{font-family:var(--mono);font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
   .badge{position:fixed;top:14px;left:16px;font-family:var(--mono);font-size:12px;color:var(--faint);display:flex;align-items:center;gap:7px}
   .badge::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--off)}
   .badge[data-live="1"]::before{background:var(--live)}
 
   @media(max-width:680px){.engines{grid-template-columns:1fr}.actions{margin-left:0;width:100%}.actions .primary{flex:1}}
-  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  @media (prefers-reduced-motion:reduce){.avatar{animation:none!important}*{transition:none!important}}
 </style>
 </head>
 <body data-engine="system">
@@ -181,6 +191,21 @@ const TOPIC = {
 };
 const CHUNK_LEN  = 40000;   // base64 chars per MQTT message
 const TARGET_SR  = 24000;   // every buffer-tier output is resampled here so pauses/chimes splice safely
+
+/* Talking-head assets. Put the eight PNGs in a robot/ folder beside this
+   file. Add &avatar=0 to a screen link to run text-only instead. */
+const AVATAR_DIR = "robot/";
+const AVATAR_ON  = P.get("avatar") !== "0";
+const AVATAR_SRC = {
+  base:     "base_head.png",
+  eyesOpen: "eyes_open.png",
+  eyesShut: "eyes_closed_blink.png",
+  closed:   "mouth_closed.png",
+  small:    "mouth_small_open.png",
+  medium:   "mouth_medium_open.png",
+  wide:     "mouth_wide_open.png",
+  o:        "mouth_o.png",
+};
 
 /* Thin relay client presenting the same surface the rest of this file
    already used (connect / publish / subscribe / on), so nothing
@@ -1295,7 +1320,18 @@ function renderScreen() {
   const n = SCREENS.indexOf(MY_ID) + 1;
   app.innerHTML = `
     <button class="arm" id="arm">Tap to go live<span>screen ${n || "?"} · room ${esc(ROOM)}</span></button>
-    <div class="stage" id="stage">
+    <div class="stage${AVATAR_ON ? " hasbot" : ""}" id="stage">
+      ${AVATAR_ON ? `
+      <div class="avatar" id="avatar">
+        <img class="layer" id="av-base"     src="${AVATAR_DIR}${AVATAR_SRC.base}"     alt="Robot head">
+        <img class="layer" id="av-eyesOpen" src="${AVATAR_DIR}${AVATAR_SRC.eyesOpen}" alt="">
+        <img class="layer off" id="av-eyesShut" src="${AVATAR_DIR}${AVATAR_SRC.eyesShut}" alt="">
+        <img class="layer" id="av-closed"   src="${AVATAR_DIR}${AVATAR_SRC.closed}"   alt="">
+        <img class="layer off" id="av-small"  src="${AVATAR_DIR}${AVATAR_SRC.small}"  alt="">
+        <img class="layer off" id="av-medium" src="${AVATAR_DIR}${AVATAR_SRC.medium}" alt="">
+        <img class="layer off" id="av-wide"   src="${AVATAR_DIR}${AVATAR_SRC.wide}"   alt="">
+        <img class="layer off" id="av-o"      src="${AVATAR_DIR}${AVATAR_SRC.o}"      alt="">
+      </div>` : ""}
       <div class="spoken" id="spoken"></div>
       <div class="rstat" id="rstat">Ready</div>
     </div>
@@ -1309,11 +1345,124 @@ function renderScreen() {
   const setStat  = t => { $("rstat").textContent = t; };
   const setBadge = (live, txt) => { $("badge").dataset.live = live ? "1" : "0"; $("badgetxt").textContent = txt; };
 
+  /* ============================================================
+     Talking head.
+
+     Two drive modes, because the two audio paths differ:
+       - Buffer tiers (Piper/Kokoro) play through Web Audio, so an
+         AnalyserNode gives us real amplitude and the mouth actually
+         matches the sound.
+       - Instant speaks straight out of the sound card with nothing
+         to measure, so the mouth runs on a timer. Reads fine from
+         across a classroom; it just isn't truly synced.
+     ============================================================ */
+  const Bot = (() => {
+    if (!AVATAR_ON) {
+      const noop = () => {};
+      return { start:noop, stop:noop, driveAnalyser:noop, driveTimer:noop };
+    }
+    const MOUTHS = ["closed", "small", "medium", "wide", "o"];
+    const el = {};
+    for (const k of [...MOUTHS, "eyesOpen", "eyesShut"]) el[k] = $("av-" + k);
+    const avatar = $("avatar");
+
+    let mouth = "closed", lastSwap = 0, raf = null, timer = null, blinkTimer = null;
+
+    const show = (name) => {
+      if (name === mouth) return;
+      el[mouth]?.classList.add("off");
+      el[name]?.classList.remove("off");
+      mouth = name;
+    };
+
+    /* Hysteresis: without a minimum dwell the mouth flickers on every
+       frame and looks like static rather than speech. */
+    const showThrottled = (name, now, minMs = 70) => {
+      if (name === mouth || now - lastSwap < minMs) return;
+      lastSwap = now;
+      show(name);
+    };
+
+    function blinkLoop() {
+      const wait = 3000 + Math.random() * 3000;
+      blinkTimer = setTimeout(() => {
+        el.eyesOpen.classList.add("off");
+        el.eyesShut.classList.remove("off");
+        setTimeout(() => {
+          el.eyesShut.classList.add("off");
+          el.eyesOpen.classList.remove("off");
+          blinkLoop();
+        }, 120 + Math.random() * 60);
+      }, wait);
+    }
+    blinkLoop();   // blinking is independent of speech and runs forever
+
+    function clearDrive() {
+      if (raf) { cancelAnimationFrame(raf); raf = null; }
+      if (timer) { clearInterval(timer); timer = null; }
+    }
+
+    return {
+      stop() {
+        clearDrive();
+        avatar.classList.remove("talking");
+        show("closed");
+      },
+
+      /* real lip sync from the playing buffer */
+      driveAnalyser(analyser) {
+        clearDrive();
+        avatar.classList.add("talking");
+        const data = new Uint8Array(analyser.fftSize);
+        let smoothed = 0, oFlip = 0;
+        const tick = () => {
+          analyser.getByteTimeDomainData(data);
+          let sum = 0;
+          for (let i = 0; i < data.length; i++) {
+            const v = (data[i] - 128) / 128;
+            sum += v * v;
+          }
+          const rms = Math.sqrt(sum / data.length);
+          // Fast attack, slow release — mouths open quickly and close lazily.
+          smoothed = rms > smoothed ? rms : smoothed * 0.72 + rms * 0.28;
+
+          const now = performance.now();
+          let next;
+          if (smoothed < 0.02) next = "closed";
+          else if (smoothed < 0.06) next = "small";
+          else if (smoothed < 0.12) next = "medium";
+          else {
+            // Alternate wide and O on loud vowels so it doesn't lock open.
+            if (now - oFlip > 260) { oFlip = now; next = mouth === "wide" ? "o" : "wide"; }
+            else next = mouth === "o" ? "o" : "wide";
+          }
+          showThrottled(next, now);
+          raf = requestAnimationFrame(tick);
+        };
+        tick();
+      },
+
+      /* timer-driven fallback for the Instant tier */
+      driveTimer() {
+        clearDrive();
+        avatar.classList.add("talking");
+        const bag = ["small", "small", "medium", "medium", "medium", "wide", "o", "small"];
+        const step = () => {
+          show(bag[Math.floor(Math.random() * bag.length)]);
+          clearInterval(timer);
+          timer = setInterval(step, 80 + Math.random() * 60);
+        };
+        step();
+      },
+    };
+  })();
+
   function stopEverything() {
     if (seqCancel) { seqCancel(); seqCancel = null; }
     speechSynthesis.cancel();
     clearInterval(keepAlive);
     if (source) { try { source.stop(); } catch {} source = null; }
+    Bot.stop();
     setStat("Ready");
   }
 
@@ -1323,19 +1472,23 @@ function renderScreen() {
     $("spoken").textContent = display;
     setStat("Speaking");
     let idx = 0, timer = null, live = true;
-    const done = () => { seqCancel = null; setStat("Ready"); clearInterval(keepAlive); };
+    const done = () => { seqCancel = null; Bot.stop(); setStat("Ready"); clearInterval(keepAlive); };
     const next = () => {
       if (!live) return;
       if (idx >= segments.length) return done();
       const s = segments[idx++];
-      if (s.p !== undefined) { timer = setTimeout(next, s.p * 1000); return; }
+      // Mouth rests through a [PAUSE] instead of chattering at nothing.
+      if (s.p !== undefined) { Bot.stop(); timer = setTimeout(next, s.p * 1000); return; }
       const u = new SpeechSynthesisUtterance(s.t);
       const v = speechSynthesis.getVoices().find(x => x.name === s.v);
       if (v) u.voice = v;
       u.rate = s.r || 1;
       if (s.vol !== undefined) u.volume = s.vol;
+      u.onstart = () => Bot.driveTimer();
       u.onend = u.onerror = next;
       speechSynthesis.speak(u);
+      // Some Edge voices never fire onstart; start the mouth anyway.
+      setTimeout(() => { if (live && speechSynthesis.speaking) Bot.driveTimer(); }, 220);
     };
     seqCancel = () => { live = false; clearTimeout(timer); };
     keepAlive = setInterval(() => {
@@ -1354,9 +1507,17 @@ function renderScreen() {
     const buf = await audioCtx.decodeAudioData(bytes.buffer);
     source = audioCtx.createBufferSource();
     source.buffer = buf;
-    source.connect(audioCtx.destination);
-    source.onended = () => setStat("Ready");
+
+    // Tap the signal on its way to the speakers so the mouth can follow it.
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.1;
+    source.connect(analyser);
+    analyser.connect(audioCtx.destination);
+
+    source.onended = () => { Bot.stop(); setStat("Ready"); };
     source.start();
+    Bot.driveAnalyser(analyser);
   }
 
   function handle(topic, buf) {
