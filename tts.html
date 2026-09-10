@@ -143,7 +143,6 @@
 <body data-engine="system">
 <div id="app"></div>
 
-<script src="mqtt.min.js"></script>
 <script type="module">
 /* =============================================================
    Classroom TTS — teacher console + classroom screens
@@ -162,12 +161,15 @@ const ROOM    = P.get("room") || "";
 const MY_ID   = P.get("id") || "";
 const ROLE    = P.get("mode") === "send" ? "send" : (MY_ID ? "recv" : "setup");
 const SCREENS = ["screen1", "screen2"];
-const BROKERS = {
-  hivemq: "wss://broker.hivemq.com:8884/mqtt",
-  emqx:   "wss://broker.emqx.io:8084/mqtt",
-};
-const BROKER  = BROKERS[P.get("broker")] || BROKERS.hivemq;
-const app     = document.getElementById("app");
+/* ---- RELAY: paste your Worker host here after deploying ----------------
+   e.g. "classroom-tts-relay.yourname.workers.dev"
+   The token is NOT stored here — it travels in the URL so it never
+   lands in this public repo. */
+const RELAY_HOST = P.get("relay") || "classroom-tts-relay.tacomadragonclass1.workers.dev";
+const TOKEN      = P.get("token") || "";
+const RELAY_URL  = id =>
+  `wss://${RELAY_HOST}/room?room=${encodeURIComponent(ROOM)}&token=${encodeURIComponent(TOKEN)}&id=${encodeURIComponent(id || "console")}`;
+const app        = document.getElementById("app");
 
 const TOPIC = {
   say:     r => `ctts/${r}/say`,     // {target, display, segments:[{p}|{t,v,r,vol}]}
@@ -180,11 +182,59 @@ const TOPIC = {
 const CHUNK_LEN  = 40000;   // base64 chars per MQTT message
 const TARGET_SR  = 24000;   // every buffer-tier output is resampled here so pauses/chimes splice safely
 
+/* Thin relay client presenting the same surface the rest of this file
+   already used (connect / publish / subscribe / on), so nothing
+   downstream had to change when the transport moved off MQTT. */
 function connect(opts = {}) {
-  return mqtt.connect(BROKER, {
-    clientId: "ctts_" + Math.random().toString(16).slice(2, 10),
-    clean: true, reconnectPeriod: 2000, connectTimeout: 8000, ...opts,
-  });
+  const handlers = { connect: [], close: [], message: [], error: [] };
+  const subs = new Set();
+  let ws = null, closed = false, retry = null;
+
+  const api = {
+    connected: false,
+    on(ev, fn) { (handlers[ev] ||= []).push(fn); return api; },
+    subscribe(topics) { for (const t of [].concat(topics)) subs.add(t); },
+    publish(topic, payload, o = {}) {
+      if (!api.connected) return;
+      try { ws.send(JSON.stringify({ topic, payload, retain: !!o.retain })); } catch {}
+    },
+    end() { closed = true; clearTimeout(retry); try { ws?.close(); } catch {} },
+  };
+  const emit = (ev, ...a) => { for (const fn of handlers[ev] || []) { try { fn(...a); } catch (e) { console.error(e); } } };
+
+  /* MQTT-style topic match so existing "+" wildcard subscriptions work. */
+  const matches = topic => {
+    for (const p of subs) {
+      const a = p.split("/"), b = topic.split("/");
+      if (a.length !== b.length) continue;
+      if (a.every((seg, i) => seg === "+" || seg === b[i])) return true;
+    }
+    return false;
+  };
+
+  const open = () => {
+    if (closed) return;
+    try { ws = new WebSocket(RELAY_URL(opts.id)); }
+    catch (e) { return schedule(); }
+
+    ws.addEventListener("open", () => {
+      api.connected = true;
+      if (opts.will) ws.send(JSON.stringify({ type: "will", will: { topic: opts.will.topic, payload: opts.will.payload } }));
+      emit("connect");
+    });
+    ws.addEventListener("message", ev => {
+      let m; try { m = JSON.parse(ev.data); } catch { return; }
+      if (!m.topic || !matches(m.topic)) return;
+      // Downstream code expects a Buffer-ish value with toString().
+      emit("message", m.topic, { toString: () => String(m.payload ?? "") });
+    });
+    ws.addEventListener("close", () => { api.connected = false; emit("close"); schedule(); });
+    ws.addEventListener("error", () => { /* close fires next; reconnect there */ });
+  };
+  const schedule = () => { if (closed) return; clearTimeout(retry); retry = setTimeout(open, 2000); };
+
+  open();
+  return api;
 }
 const esc = s => String(s).replace(/[<>&"]/g, c => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;", '"':"&quot;" }[c]));
 
@@ -206,23 +256,31 @@ function renderSetup() {
       </p>
       <label class="setup-label" for="roomin">Room code</label>
       <input type="text" id="roomin" value="${seed}">
+      <label class="setup-label" for="tokenin">Access token — must match ROOM_TOKEN in your Worker settings</label>
+      <input type="text" id="tokenin" value="${esc(TOKEN)}" placeholder="paste the token you set in Cloudflare">
       <p style="color:var(--faint);font-size:13px;margin-top:8px;max-width:64ch">
-        Anyone who knows this code can send audio to your screens. Keep it random and off the repo description.
+        The token lives in these links and in your Worker's settings — never in this repo.
+        Bookmark the links; anyone holding one can send audio to your screens.
       </p>
       <div id="links" style="margin-top:20px"></div>
       <button class="btn primary" id="go" style="margin-top:6px">Open teacher console</button>
     </main>`;
   const draw = () => {
-    const r = document.getElementById("roomin").value.trim();
+    const r = encodeURIComponent(document.getElementById("roomin").value.trim());
+    const t = encodeURIComponent(document.getElementById("tokenin").value.trim());
+    const q = `room=${r}&amp;token=${t}`;
     document.getElementById("links").innerHTML =
-      `<span class="setup-label">Teacher laptop</span><div class="link-out">${base}?room=${r}&amp;mode=send</div>` +
+      `<span class="setup-label">Teacher laptop</span><div class="link-out">${base}?${q}&amp;mode=send</div>` +
       SCREENS.map((s, i) =>
-        `<span class="setup-label">Classroom screen ${i + 1}</span><div class="link-out">${base}?room=${r}&amp;id=${s}</div>`).join("");
+        `<span class="setup-label">Classroom screen ${i + 1}</span><div class="link-out">${base}?${q}&amp;id=${s}</div>`).join("");
   };
   draw();
   document.getElementById("roomin").addEventListener("input", draw);
+  document.getElementById("tokenin").addEventListener("input", draw);
   document.getElementById("go").addEventListener("click", () => {
-    location.search = "?room=" + document.getElementById("roomin").value.trim() + "&mode=send";
+    const r = encodeURIComponent(document.getElementById("roomin").value.trim());
+    const t = encodeURIComponent(document.getElementById("tokenin").value.trim());
+    location.search = `?room=${r}&token=${t}&mode=send`;
   });
 }
 
@@ -532,7 +590,7 @@ function renderTeacher() {
         <div class="note kok"><b>Studio</b> is the best quality and the slowest to chew; use it for prepared read-alouds. Both screens receive identical audio, and resends replay the cached audio instantly.</div>
       </div>
 
-      <footer>kokoro-js 1.2.1 · piper-tts-web 1.0.4 · soundtouchjs 0.3.0 · Web Speech API · mqtt via ${esc(BROKER.split("//")[1].split(":")[0])}</footer>
+      <footer>kokoro-js 1.2.1 · piper-tts-web 1.0.4 · soundtouchjs 0.3.0 · Web Speech API · relay ${esc(RELAY_HOST)}</footer>
     </main>`;
 
   const $ = id => document.getElementById(id);
@@ -1068,7 +1126,7 @@ function renderTeacher() {
     speechSynthesis.cancel();
   }
 
-  /* ---------- mqtt ---------- */
+  /* ---------- relay ---------- */
   const client = connect();
   function drawPresence() {
     els.presence.innerHTML =
@@ -1332,7 +1390,7 @@ function renderScreen() {
   }
 
   function start() {
-    client = connect({ will: { topic: TOPIC.pres(ROOM, MY_ID), payload: "offline", retain: true, qos: 0 } });
+    client = connect({ id: MY_ID, will: { topic: TOPIC.pres(ROOM, MY_ID), payload: "offline", retain: true } });
     client.on("connect", () => {
       setBadge(armed, armed ? "live" : "open, not armed");
       client.publish(TOPIC.pres(ROOM, MY_ID), armed ? "online" : "open", { retain: true });
@@ -1366,9 +1424,15 @@ function renderScreen() {
 /* ============================================================
    ROUTER
    ============================================================ */
-if (typeof mqtt === "undefined") {
-  app.innerHTML = `<main><header><div class="wordmark">Missing file<span class="dot">.</span></div></header>
-    <p style="color:var(--muted)">Upload <code>mqtt.min.js</code> into the same folder as this page, then reload.</p></main>`;
+if (RELAY_HOST.startsWith("PASTE-")) {
+  app.innerHTML = `<main><header><div class="wordmark">Relay not set<span class="dot">.</span></div></header>
+    <p style="color:var(--muted)">Open <code>tts.html</code> in your repo and replace
+    <code>PASTE-YOUR-WORKER-HOST.workers.dev</code> near the top of the script with your Worker's host,
+    then reload.</p></main>`;
+} else if (ROLE !== "setup" && ROOM && !TOKEN) {
+  app.innerHTML = `<main><header><div class="wordmark">Missing token<span class="dot">.</span></div></header>
+    <p style="color:var(--muted)">This link needs <code>&amp;token=…</code> on the end. Open the page with no
+    parameters to generate fresh links.</p></main>`;
 } else if (ROLE === "setup" || !ROOM) renderSetup();
 else if (ROLE === "send") renderTeacher();
 else renderScreen();
