@@ -127,20 +127,23 @@
        font-family:var(--sans);font-variation-settings:"wdth" 110,"wght" 800;
        font-size:5.5vw;letter-spacing:-.01em;cursor:pointer}
   .arm span{display:block;font-size:.28em;font-variation-settings:"wdth" 100,"wght" 400;color:var(--muted);margin-top:.6em;font-family:var(--mono)}
-  .stage{display:none;width:100vw;height:100vh;flex-direction:column;align-items:center;justify-content:center;padding:2vh 4vw;gap:2.5vh}
+  .stage{display:none;width:100vw;height:100vh;flex-direction:column;align-items:center;justify-content:center;padding:1vh}
   .stage.on{display:flex}
-  .spoken{font-size:clamp(34px,8vw,140px);font-variation-settings:"wdth" 112,"wght" 750;
-          letter-spacing:-.025em;line-height:1.1;max-width:94vw}
-  /* With the robot on stage she takes the room and the text plays support. */
-  .stage.hasbot .spoken{font-size:clamp(26px,4.6vw,74px)}
+  .spoken{display:none}   /* voice deliverer, not a reader */
 
-  .avatar{position:relative;width:min(56vh,52vw);aspect-ratio:1/1;flex:none;
-          animation:bob 4.5s ease-in-out infinite;will-change:transform}
+  /* Two motions on separate elements at prime-ish periods, so the loop
+     never visibly repeats and she reads as alive rather than animated. */
+  .avatar{position:relative;width:min(88vh,88vw);aspect-ratio:1/1;flex:none;
+          animation:bob 5.3s ease-in-out infinite;will-change:transform}
+  .avatar-inner{position:absolute;inset:0;
+                animation:sway 8.1s ease-in-out infinite;will-change:transform}
   .avatar .layer{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
                  pointer-events:none;user-select:none;-webkit-user-drag:none}
   .avatar .layer.off{opacity:0}
-  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.1%)}}
-  .avatar.talking{animation-duration:2.6s}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.3%)}}
+  @keyframes sway{0%,100%{transform:rotate(-0.9deg)}50%{transform:rotate(0.9deg)}}
+  .avatar.talking{animation-duration:3.4s}
+  .avatar.talking .avatar-inner{animation-duration:6.2s}
   .rstat{font-family:var(--mono);font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
   .badge{position:fixed;top:14px;left:16px;font-family:var(--mono);font-size:12px;color:var(--faint);display:flex;align-items:center;gap:7px}
   .badge::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--off)}
@@ -1320,9 +1323,9 @@ function renderScreen() {
   const n = SCREENS.indexOf(MY_ID) + 1;
   app.innerHTML = `
     <button class="arm" id="arm">Tap to go live<span>screen ${n || "?"} · room ${esc(ROOM)}</span></button>
-    <div class="stage${AVATAR_ON ? " hasbot" : ""}" id="stage">
+    <div class="stage" id="stage">
       ${AVATAR_ON ? `
-      <div class="avatar" id="avatar">
+      <div class="avatar" id="avatar"><div class="avatar-inner">
         <img class="layer" id="av-base"     src="${AVATAR_DIR}${AVATAR_SRC.base}"     alt="Robot head">
         <img class="layer" id="av-eyesOpen" src="${AVATAR_DIR}${AVATAR_SRC.eyesOpen}" alt="">
         <img class="layer off" id="av-eyesShut" src="${AVATAR_DIR}${AVATAR_SRC.eyesShut}" alt="">
@@ -1331,9 +1334,9 @@ function renderScreen() {
         <img class="layer off" id="av-medium" src="${AVATAR_DIR}${AVATAR_SRC.medium}" alt="">
         <img class="layer off" id="av-wide"   src="${AVATAR_DIR}${AVATAR_SRC.wide}"   alt="">
         <img class="layer off" id="av-o"      src="${AVATAR_DIR}${AVATAR_SRC.o}"      alt="">
-      </div>` : ""}
+      </div></div>` : ""}
       <div class="spoken" id="spoken"></div>
-      <div class="rstat" id="rstat">Ready</div>
+      <div class="rstat" id="rstat" hidden>Ready</div>
     </div>
     <div class="badge" id="badge" data-live="0" style="display:none"><span id="badgetxt">connecting</span></div>`;
 
@@ -1359,7 +1362,7 @@ function renderScreen() {
   const Bot = (() => {
     if (!AVATAR_ON) {
       const noop = () => {};
-      return { start:noop, stop:noop, driveAnalyser:noop, driveTimer:noop };
+      return { stop:noop, driveAnalyser:noop, driveTimer:noop, pulseWord:noop };
     }
     const MOUTHS = ["closed", "small", "medium", "wide", "o"];
     const el = {};
@@ -1367,6 +1370,8 @@ function renderScreen() {
     const avatar = $("avatar");
 
     let mouth = "closed", lastSwap = 0, raf = null, timer = null, blinkTimer = null;
+    let pulses = [];
+    const clearPulses = () => { pulses.forEach(clearTimeout); pulses = []; };
 
     const show = (name) => {
       if (name === mouth) return;
@@ -1405,6 +1410,7 @@ function renderScreen() {
     return {
       stop() {
         clearDrive();
+        clearPulses();
         avatar.classList.remove("talking");
         show("closed");
       },
@@ -1442,15 +1448,43 @@ function renderScreen() {
         tick();
       },
 
-      /* timer-driven fallback for the Instant tier */
+      /* Instant tier. There is no buffer to measure, but the Web Speech
+         API fires a boundary event at the start of each word — real
+         timing. We shape one open/close per syllable from that, which
+         tracks the speech far better than cycling shapes at random. */
+      pulseWord(word, rate = 1) {
+        clearDrive();
+        avatar.classList.add("talking");
+        clearPulses();
+
+        const groups = word.toLowerCase().replace(/[^a-z']/g, "").match(/[aeiouy]+/g) || ["a"];
+        const syls = Math.min(6, groups.length);
+        const unit = 155 / Math.max(0.5, rate);
+
+        let t = 0;
+        for (let i = 0; i < syls; i++) {
+          const g = groups[i] || "a";
+          // Rounded vowels get the O, open vowels get the wide shape.
+          const shape = /^[ou]/.test(g) ? "o" : /^[ae]/.test(g) ? "wide" : "medium";
+          pulses.push(setTimeout(() => show(shape), t));
+          pulses.push(setTimeout(() => show("small"), t + unit * 0.58));
+          t += unit;
+        }
+        // Rest at "small" between words; "closed" only when speech ends.
+        pulses.push(setTimeout(() => show("small"), t));
+      },
+
+      /* Used only when a voice fires no boundary events at all. */
       driveTimer() {
         clearDrive();
         avatar.classList.add("talking");
-        const bag = ["small", "small", "medium", "medium", "medium", "wide", "o", "small"];
+        const open = ["medium", "medium", "wide", "o", "small"];
+        let wantOpen = true;
         const step = () => {
-          show(bag[Math.floor(Math.random() * bag.length)]);
+          show(wantOpen ? open[Math.floor(Math.random() * open.length)] : "small");
+          wantOpen = !wantOpen;
           clearInterval(timer);
-          timer = setInterval(step, 80 + Math.random() * 60);
+          timer = setInterval(step, 95 + Math.random() * 55);
         };
         step();
       },
@@ -1469,7 +1503,6 @@ function renderScreen() {
   /* sequential text segments -> local Edge voice */
   function speakSegments(display, segments) {
     stopEverything();
-    $("spoken").textContent = display;
     setStat("Speaking");
     let idx = 0, timer = null, live = true;
     const done = () => { seqCancel = null; Bot.stop(); setStat("Ready"); clearInterval(keepAlive); };
@@ -1484,11 +1517,20 @@ function renderScreen() {
       if (v) u.voice = v;
       u.rate = s.r || 1;
       if (s.vol !== undefined) u.volume = s.vol;
-      u.onstart = () => Bot.driveTimer();
+      // Word-boundary events give us real timing; fall back only if a
+      // voice turns out not to fire them.
+      let sawBoundary = false;
+      u.onboundary = ev => {
+        if (ev.name && ev.name !== "word") return;
+        sawBoundary = true;
+        const m = String(s.t).slice(ev.charIndex).match(/^[A-Za-z'\u2019-]+/);
+        Bot.pulseWord(m ? m[0] : "uh", u.rate);
+      };
       u.onend = u.onerror = next;
       speechSynthesis.speak(u);
-      // Some Edge voices never fire onstart; start the mouth anyway.
-      setTimeout(() => { if (live && speechSynthesis.speaking) Bot.driveTimer(); }, 220);
+      setTimeout(() => {
+        if (live && !sawBoundary && speechSynthesis.speaking) Bot.driveTimer();
+      }, 450);
     };
     seqCancel = () => { live = false; clearTimeout(timer); };
     keepAlive = setInterval(() => {
@@ -1499,7 +1541,6 @@ function renderScreen() {
 
   async function playAudio(b64, text) {
     stopEverything();
-    $("spoken").textContent = text;
     setStat("Playing");
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
