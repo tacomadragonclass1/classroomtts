@@ -1615,12 +1615,35 @@ function renderScreen() {
     setBadge(true, "live");
     if (client?.connected) client.publish(TOPIC.pres(ROOM, MY_ID), "online", { retain: true });
     document.documentElement.requestFullscreen?.().catch(() => {});
+    keepAwake();   // hold the display on for the rest of the school day
   });
   addEventListener("beforeunload", () => {
     if (client?.connected) client.publish(TOPIC.pres(ROOM, MY_ID), "offline", { retain: true });
   });
 
   start();   // connect immediately so the console sees "open" before arming
+}
+
+/* ============================================================
+   SCREEN WAKE LOCK
+   ============================================================ */
+let wakeLock = null;
+
+async function keepAwake() {
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+  } catch (err) {
+    console.error(`Wake Lock error: ${err.name}, ${err.message}`);
+  }
+}
+
+// The browser drops the lock whenever the tab is hidden, so re-acquire on the
+// way back. Screens only — the teacher console and the setup page should be
+// free to sleep like any normal laptop window.
+if (ROLE === "recv") {
+  document.addEventListener("visibilitychange", () => {
+    if (wakeLock !== null && document.visibilityState === "visible") keepAwake();
+  });
 }
 
 /* ============================================================
